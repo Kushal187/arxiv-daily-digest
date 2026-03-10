@@ -1,0 +1,21 @@
+name: Daily arXiv ingest
+
+on:
+  schedule:
+    - cron: "17 9 * * *"
+  workflow_dispatch:
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger worker ingest
+        env:
+          WORKER_URL: ${{ secrets.WORKER_URL }}
+          INGEST_JOB_TOKEN: ${{ secrets.INGEST_JOB_TOKEN }}
+        run: |
+          curl --fail --show-error --request POST \
+            --url "$WORKER_URL/internal/jobs/daily-ingest" \
+            --header "Authorization: Bearer $INGEST_JOB_TOKEN" \
+            --header "Content-Type: application/json" \
+            --data '{"force": false}'

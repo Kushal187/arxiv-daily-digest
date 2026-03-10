@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "arxiv-digest-worker"
+version = "0.1.0"
+description = "FastAPI worker for arXiv daily digest ingestion and ranking."
+requires-python = ">=3.10"
+dependencies = [
+  "fastapi>=0.115.0",
+  "uvicorn>=0.30.0",
+  "psycopg[binary]>=3.2.0",
+  "pydantic>=2.8.0",
+  "python-dateutil>=2.9.0"
+]
+
+[tool.setuptools]
+package-dir = {"" = "."}
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
