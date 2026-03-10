@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { DigestFeed } from "../../components/digest-feed";
 import { DigestHeader } from "../../components/digest-header";
@@ -5,6 +6,7 @@ import { auth } from "../../lib/auth";
 import { isCalendarDateString, utcCalendarDateString } from "../../lib/dates";
 import { getUserPreferences } from "../../lib/queries";
 import { fetchDigest } from "../../lib/worker";
+import DigestLoading from "./loading";
 
 export default async function DigestPage({
   searchParams
@@ -24,9 +26,17 @@ export default async function DigestPage({
     redirect(`/digest?date=${utcCalendarDateString()}`);
   }
 
+  return (
+    <Suspense fallback={<DigestLoading />}>
+      <DigestContent userId={session.user.id} requestedDate={requestedDate} />
+    </Suspense>
+  );
+}
+
+async function DigestContent({ userId, requestedDate }: { userId: string; requestedDate: string }) {
   const [preferences, digest] = await Promise.all([
-    getUserPreferences(session.user.id),
-    fetchDigest(session.user.id, requestedDate)
+    getUserPreferences(userId),
+    fetchDigest(userId, requestedDate)
   ]);
 
   if (!preferences.onboardingCompleted || preferences.topics.length < 3) {

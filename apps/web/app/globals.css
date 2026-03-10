@@ -594,6 +594,67 @@ h3.paper-title {
   padding-top: 10px;
 }
 
+/* Paper summary block */
+
+.paper-summary-block {
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: 4px;
+  background: var(--surface);
+}
+
+.paper-summary-label {
+  color: var(--accent);
+  font-family: "IBM Plex Sans", "DM Sans", "Helvetica Neue", Arial, sans-serif;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin: 0 0 6px;
+}
+
+.paper-summary-text {
+  line-height: 1.6;
+  margin: 0;
+}
+
+.expandable-abstract {
+  display: grid;
+  gap: 8px;
+}
+
+/* Digest skeleton loading state */
+
+.digest-skeleton-shimmer {
+  display: block;
+  background: linear-gradient(90deg, var(--soft-line) 25%, #e8e8e8 50%, var(--soft-line) 75%);
+  background-size: 200% 100%;
+  animation: digest-shimmer 1.4s ease-in-out infinite;
+  border-radius: 4px;
+}
+
+.digest-skeleton-row {
+  opacity: 1;
+  animation: digest-fade-in 300ms ease both;
+}
+
+.digest-skeleton-row:nth-child(2) { animation-delay: 40ms; }
+.digest-skeleton-row:nth-child(3) { animation-delay: 80ms; }
+.digest-skeleton-row:nth-child(4) { animation-delay: 120ms; }
+.digest-skeleton-row:nth-child(5) { animation-delay: 160ms; }
+.digest-skeleton-row:nth-child(6) { animation-delay: 200ms; }
+
+@keyframes digest-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+@keyframes digest-fade-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 @media (max-width: 760px) {
   .shell {
     padding: 0 16px 40px;

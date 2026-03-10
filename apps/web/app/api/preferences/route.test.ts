@@ -22,6 +22,10 @@ vi.mock("../../../lib/cache", async () => {
   };
 });
 
+vi.mock("../../../lib/worker", () => ({
+  refreshUserProfile: vi.fn()
+}));
+
 describe("PUT /api/preferences", () => {
   beforeEach(() => {
     vi.clearAllMocks();

@@ -3,28 +3,30 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import date, datetime, timezone
 from functools import lru_cache
-import math
 import re
 import unicodedata
 from typing import Any
 
-from .embeddings import embed_text
+from .embeddings import embed_text, vector_literal
 from .summaries import get_or_create_summary
+from .topics import TOPIC_DEFINITIONS
 
 
 BASE_WEIGHTS = {
-    "semantic": 0.34,
+    "semantic": 0.32,
     "topic": 0.18,
-    "category": 0.08,
+    "category": 0.10,
     "author": 0.12,
     "recency": 0.08,
     "saved_similarity": 0.14,
-    "open_similarity": 0.06,
-    "dismiss_penalty": -0.18,
+    "open_similarity": 0.12,
+    "dismiss_penalty": -0.30,
 }
 MIN_CATEGORY_FEED_SIZE = 30
 DIVERSITY_RERANK_LIMIT = 50
 DIVERSITY_REPEAT_PENALTY = 0.07
+INTERACTION_LOOKBACK_DAYS = 90
+INTERACTION_MAX_ITEMS = 150
 
 
 def normalize_author_name(name: str) -> str:
@@ -120,49 +122,38 @@ def match_followed_authors(followed_authors: list[str], paper_authors: list[str]
     return matches
 
 
-def cosine_similarity(left: list[float], right: list[float]) -> float:
-    if not left or not right:
-        return 0.0
-
-    numerator = sum(a * b for a, b in zip(left, right))
-    left_norm = math.sqrt(sum(a * a for a in left)) or 1.0
-    right_norm = math.sqrt(sum(b * b for b in right)) or 1.0
-    return numerator / (left_norm * right_norm)
-
-
 def weighted_average_vectors(weighted_vectors: list[tuple[list[float], float]]) -> list[float]:
+    import numpy as np
+
     if not weighted_vectors:
         return [0.0] * 384
 
-    length = len(weighted_vectors[0][0])
-    totals = [0.0] * length
-    total_weight = 0.0
-
-    for vector, weight in weighted_vectors:
-        total_weight += weight
-        for index, value in enumerate(vector):
-            totals[index] += value * weight
-
+    vectors = np.asarray([v for v, _ in weighted_vectors], dtype=np.float64)
+    weights = np.asarray([w for _, w in weighted_vectors], dtype=np.float64)
+    total_weight = weights.sum()
     if total_weight == 0:
-        return [0.0] * length
+        return [0.0] * vectors.shape[1]
 
-    return [value / total_weight for value in totals]
+    result = (weights[:, None] * vectors).sum(axis=0) / total_weight
+    return result.tolist()
 
 
 @lru_cache(maxsize=None)
 def topic_prototype(slug: str) -> list[float]:
+    for definition in TOPIC_DEFINITIONS:
+        if definition["slug"] == slug:
+            return embed_text(definition["prototype"])
+
     return embed_text(slug.replace("-", " "))
 
 
 def build_user_profile_vector(
     selected_topics: list[str],
-    followed_authors: list[str],
     saved_embeddings: list[list[float]],
     opened_embeddings: list[list[float]] | None = None,
 ) -> list[float]:
     weighted_vectors: list[tuple[list[float], float]] = []
     weighted_vectors.extend((topic_prototype(topic), 1.0) for topic in selected_topics)
-    weighted_vectors.extend((embed_text(author), 0.9) for author in followed_authors)
     weighted_vectors.extend((embedding, 1.15) for embedding in saved_embeddings)
     weighted_vectors.extend((embedding, 0.55) for embedding in (opened_embeddings or []))
     return weighted_average_vectors(weighted_vectors)
@@ -171,13 +162,6 @@ def build_user_profile_vector(
 def recency_score(published_at: datetime, now: datetime) -> float:
     age_hours = max((now - published_at).total_seconds() / 3600.0, 0.0)
     return max(0.0, 1 - min(age_hours / 72.0, 1.0))
-
-
-def similarity_to_interactions(paper_vector: list[float], embeddings: list[list[float]]) -> float:
-    if not embeddings:
-        return 0.0
-
-    return max(cosine_similarity(paper_vector, embedding) for embedding in embeddings)
 
 
 def _topic_affinity(selected_topics: list[str], paper_topics: list[dict[str, Any]]) -> float:
@@ -253,13 +237,8 @@ def _score_paper(
     selected_topics: list[str],
     followed_authors: list[str],
     preferred_categories: list[str],
-    profile_vector: list[float],
-    saved_embeddings: list[list[float]],
-    opened_embeddings: list[list[float]],
-    dismissed_embeddings: list[list[float]],
     now: datetime,
 ) -> dict[str, Any]:
-    paper_vector = paper["embedding"]
     visible_topics = [topic["slug"] for topic in paper["topics"] if not topic["is_hidden"]]
     author_matches = match_followed_authors(followed_authors, paper["authors"])
     category_overlap = set(preferred_categories).intersection(paper["categories"]) if preferred_categories else set()
@@ -267,15 +246,19 @@ def _score_paper(
     paper["visible_topics"] = visible_topics
     paper["author_matches"] = author_matches
 
+    category_score = 0.0
+    if preferred_categories and category_overlap:
+        category_score = min(len(category_overlap) / len(preferred_categories), 1.0)
+
     feature_scores = {
-        "semantic": cosine_similarity(profile_vector, paper_vector),
+        "semantic": float(paper.get("semantic_score", 0.0)),
         "topic": _topic_affinity(selected_topics, paper["topics"]),
-        "category": 1.0 if category_overlap else 0.0,
+        "category": category_score,
         "author": author_matches[0]["score"] if author_matches else 0.0,
         "recency": recency_score(paper["published_at"], now),
-        "saved_similarity": similarity_to_interactions(paper_vector, saved_embeddings),
-        "open_similarity": similarity_to_interactions(paper_vector, opened_embeddings),
-        "dismiss_penalty": similarity_to_interactions(paper_vector, dismissed_embeddings),
+        "saved_similarity": float(paper.get("saved_similarity", 0.0)),
+        "open_similarity": float(paper.get("open_similarity", 0.0)),
+        "dismiss_penalty": float(paper.get("dismiss_penalty", 0.0)),
     }
 
     base_score = sum(feature_scores[name] * weight for name, weight in BASE_WEIGHTS.items())
@@ -317,33 +300,18 @@ def _rerank_with_diversity(papers: list[dict[str, Any]]) -> list[dict[str, Any]]
     return selected + tail
 
 
-def rank_papers_for_user(
+def _rank_papers(
     papers: list[dict[str, Any]],
-    selected_topics: list[str],
-    followed_authors: list[str],
-    preferred_categories: list[str],
-    saved_embeddings: list[list[float]],
-    dismissed_embeddings: list[list[float]],
-    opened_embeddings: list[list[float]] | None = None,
+    *,
+    preferences: dict[str, Any],
 ) -> list[dict[str, Any]]:
     now = datetime.now(timezone.utc)
-    profile_vector = build_user_profile_vector(
-        selected_topics,
-        followed_authors,
-        saved_embeddings,
-        opened_embeddings=opened_embeddings or [],
-    )
-
     scored = [
         _score_paper(
             paper,
-            selected_topics=selected_topics,
-            followed_authors=followed_authors,
-            preferred_categories=preferred_categories,
-            profile_vector=profile_vector,
-            saved_embeddings=saved_embeddings,
-            opened_embeddings=opened_embeddings or [],
-            dismissed_embeddings=dismissed_embeddings,
+            selected_topics=preferences["topics"],
+            followed_authors=preferences["authors"],
+            preferred_categories=preferences["categories"],
             now=now,
         )
         for paper in papers
@@ -357,6 +325,10 @@ def rank_papers_for_user(
 
     return _rerank_with_diversity(active) + dismissed
 
+
+# ---------------------------------------------------------------------------
+# Database helpers
+# ---------------------------------------------------------------------------
 
 def parse_vector(raw_value: Any) -> list[float]:
     if raw_value is None:
@@ -390,7 +362,57 @@ def _latest_available_digest_date(connection, requested_date: date) -> date | No
     return row["ingest_date"] if row else None
 
 
-def _paper_rows_for_date(connection, digest_date: date) -> list[dict[str, Any]]:
+def _interaction_centroids(connection, user_id: str) -> dict[str, str | None]:
+    """Compute centroid embeddings for save/open/dismiss interactions in a single query.
+
+    Returns a dict mapping interaction type to a vector literal string (or None
+    if the user has no interactions of that type).
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            select
+              avg(p.embedding) filter (where ui.interaction_type = 'save')    as save_centroid,
+              avg(p.embedding) filter (where ui.interaction_type = 'open')    as open_centroid,
+              avg(p.embedding) filter (where ui.interaction_type = 'dismiss') as dismiss_centroid
+            from user_interactions ui
+            join papers p on p.id = ui.paper_id
+            where ui.user_id = %s
+              and ui.created_at >= now() - interval '90 days'
+              and p.embedding is not null
+            """,
+            (user_id,),
+        )
+        row = cursor.fetchone()
+
+    def _to_literal(raw) -> str | None:
+        if raw is None:
+            return None
+        return vector_literal(parse_vector(raw))
+
+    return {
+        "save": _to_literal(row["save_centroid"]) if row else None,
+        "open": _to_literal(row["open_centroid"]) if row else None,
+        "dismiss": _to_literal(row["dismiss_centroid"]) if row else None,
+    }
+
+
+def _paper_rows_with_scores(
+    connection,
+    digest_date: date,
+    user_id: str,
+    profile_vector_literal: str,
+    centroids: dict[str, str | None],
+) -> list[dict[str, Any]]:
+    """Fetch papers for a date with similarity scores computed in Postgres via pgvector.
+
+    Uses pre-computed centroid vectors for interaction similarity instead of
+    per-row correlated subqueries.
+    """
+    has_save = centroids["save"] is not None
+    has_open = centroids["open"] is not None
+    has_dismiss = centroids["dismiss"] is not None
+
     with connection.cursor() as cursor:
         cursor.execute(
             """
@@ -407,21 +429,65 @@ def _paper_rows_for_date(connection, digest_date: date) -> list[dict[str, Any]]:
               p.published_at,
               p.updated_at,
               p.url,
-              p.embedding,
               coalesce(pc.cluster_id, 'misc') as cluster_id,
-              coalesce(pc.cluster_label, 'misc') as cluster_label
+              coalesce(pc.cluster_label, 'misc') as cluster_label,
+              case when p.embedding is not null
+                   then 1.0 - (p.embedding <=> %(profile)s::vector)
+                   else 0.0
+              end as semantic_score,
+              case when p.embedding is not null and %(has_save)s
+                   then greatest(1.0 - (p.embedding <=> %(save_centroid)s::vector), 0)
+                   else 0.0
+              end as saved_similarity,
+              case when p.embedding is not null and %(has_open)s
+                   then greatest(1.0 - (p.embedding <=> %(open_centroid)s::vector), 0)
+                   else 0.0
+              end as open_similarity,
+              case when p.embedding is not null and %(has_dismiss)s
+                   then greatest(1.0 - (p.embedding <=> %(dismiss_centroid)s::vector), 0)
+                   else 0.0
+              end as dismiss_penalty,
+              exists(
+                select 1 from user_interactions
+                where user_id = %(uid)s and paper_id = p.id and interaction_type = 'save'
+              ) as is_saved,
+              exists(
+                select 1 from user_interactions
+                where user_id = %(uid)s and paper_id = p.id and interaction_type = 'dismiss'
+              ) as is_dismissed
             from papers p
             left join paper_clusters pc on pc.paper_id = p.id
-            where p.ingest_date = %s
+            where p.ingest_date = %(digest_date)s
             order by p.published_at desc
             limit 250
             """,
-            (digest_date,),
+            {
+                "profile": profile_vector_literal,
+                "uid": user_id,
+                "digest_date": digest_date,
+                "has_save": has_save,
+                "save_centroid": centroids["save"] or profile_vector_literal,
+                "has_open": has_open,
+                "open_centroid": centroids["open"] or profile_vector_literal,
+                "has_dismiss": has_dismiss,
+                "dismiss_centroid": centroids["dismiss"] or profile_vector_literal,
+            },
         )
         return cursor.fetchall()
 
 
-def _paper_row_by_id(connection, paper_id: str) -> dict[str, Any] | None:
+def _single_paper_with_scores(
+    connection,
+    paper_id: str,
+    user_id: str,
+    profile_vector_literal: str,
+    centroids: dict[str, str | None],
+) -> dict[str, Any] | None:
+    """Fetch a single paper with similarity scores computed in Postgres."""
+    has_save = centroids["save"] is not None
+    has_open = centroids["open"] is not None
+    has_dismiss = centroids["dismiss"] is not None
+
     with connection.cursor() as cursor:
         cursor.execute(
             """
@@ -438,15 +504,48 @@ def _paper_row_by_id(connection, paper_id: str) -> dict[str, Any] | None:
               p.published_at,
               p.updated_at,
               p.url,
-              p.embedding,
               coalesce(pc.cluster_id, 'misc') as cluster_id,
-              coalesce(pc.cluster_label, 'misc') as cluster_label
+              coalesce(pc.cluster_label, 'misc') as cluster_label,
+              case when p.embedding is not null
+                   then 1.0 - (p.embedding <=> %(profile)s::vector)
+                   else 0.0
+              end as semantic_score,
+              case when p.embedding is not null and %(has_save)s
+                   then greatest(1.0 - (p.embedding <=> %(save_centroid)s::vector), 0)
+                   else 0.0
+              end as saved_similarity,
+              case when p.embedding is not null and %(has_open)s
+                   then greatest(1.0 - (p.embedding <=> %(open_centroid)s::vector), 0)
+                   else 0.0
+              end as open_similarity,
+              case when p.embedding is not null and %(has_dismiss)s
+                   then greatest(1.0 - (p.embedding <=> %(dismiss_centroid)s::vector), 0)
+                   else 0.0
+              end as dismiss_penalty,
+              exists(
+                select 1 from user_interactions
+                where user_id = %(uid)s and paper_id = p.id and interaction_type = 'save'
+              ) as is_saved,
+              exists(
+                select 1 from user_interactions
+                where user_id = %(uid)s and paper_id = p.id and interaction_type = 'dismiss'
+              ) as is_dismissed
             from papers p
             left join paper_clusters pc on pc.paper_id = p.id
-            where p.id = %s
+            where p.id = %(paper_id)s
             limit 1
             """,
-            (paper_id,),
+            {
+                "profile": profile_vector_literal,
+                "uid": user_id,
+                "paper_id": paper_id,
+                "has_save": has_save,
+                "save_centroid": centroids["save"] or profile_vector_literal,
+                "has_open": has_open,
+                "open_centroid": centroids["open"] or profile_vector_literal,
+                "has_dismiss": has_dismiss,
+                "dismiss_centroid": centroids["dismiss"] or profile_vector_literal,
+            },
         )
         return cursor.fetchone()
 
@@ -483,10 +582,10 @@ def _topics_for_papers(connection, paper_ids: list[str]) -> dict[str, list[dict[
 def _user_preferences(connection, user_id: str) -> dict[str, Any]:
     with connection.cursor() as cursor:
         cursor.execute(
-            "select preferred_categories from users where id = %s limit 1",
+            "select preferred_categories, profile_embedding from users where id = %s limit 1",
             (user_id,),
         )
-        user_row = cursor.fetchone() or {"preferred_categories": []}
+        user_row = cursor.fetchone() or {"preferred_categories": [], "profile_embedding": None}
 
         cursor.execute(
             "select topic_slug from user_topic_preferences where user_id = %s order by topic_slug asc",
@@ -504,34 +603,82 @@ def _user_preferences(connection, user_id: str) -> dict[str, Any]:
         "categories": user_row["preferred_categories"] or [],
         "topics": [row["topic_slug"] for row in topic_rows],
         "authors": [row["author_name"] for row in author_rows],
+        "profile_embedding": user_row.get("profile_embedding"),
     }
 
 
-def _interaction_embeddings(connection, user_id: str, interaction_type: str) -> tuple[set[str], list[list[float]]]:
+def _resolve_profile_vector(connection, user_id: str, preferences: dict[str, Any]) -> list[float]:
+    """Return the persisted profile vector, or compute + persist it as a fallback."""
+    raw = preferences.get("profile_embedding")
+    if raw is not None:
+        return parse_vector(raw)
+
+    profile = build_user_profile_vector(preferences["topics"], saved_embeddings=[])
+    _persist_profile_vector(connection, user_id, profile)
+    return profile
+
+
+def _persist_profile_vector(connection, user_id: str, profile: list[float]) -> None:
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "update users set profile_embedding = %s::vector, updated_at = now() where id = %s",
+            (vector_literal(profile), user_id),
+        )
+    connection.commit()
+
+
+def refresh_user_profile(connection, user_id: str) -> list[float]:
+    """Recompute profile vector from current preferences + interactions and persist it."""
+    preferences = _user_preferences(connection, user_id)
+
     with connection.cursor() as cursor:
         cursor.execute(
             """
-            select ui.paper_id, p.embedding
+            select p.embedding
             from user_interactions ui
             join papers p on p.id = ui.paper_id
             where ui.user_id = %s
-              and ui.interaction_type = %s
+              and ui.interaction_type = 'save'
+              and ui.created_at >= now() - make_interval(days => %s)
+              and p.embedding is not null
+            order by ui.created_at desc
+            limit %s
             """,
-            (user_id, interaction_type),
+            (user_id, INTERACTION_LOOKBACK_DAYS, INTERACTION_MAX_ITEMS),
         )
-        rows = cursor.fetchall()
+        saved_rows = cursor.fetchall()
 
-    return (
-        {row["paper_id"] for row in rows},
-        [parse_vector(row["embedding"]) for row in rows if row["embedding"] is not None],
+        cursor.execute(
+            """
+            select p.embedding
+            from user_interactions ui
+            join papers p on p.id = ui.paper_id
+            where ui.user_id = %s
+              and ui.interaction_type = 'open'
+              and ui.created_at >= now() - make_interval(days => %s)
+              and p.embedding is not null
+            order by ui.created_at desc
+            limit %s
+            """,
+            (user_id, INTERACTION_LOOKBACK_DAYS, INTERACTION_MAX_ITEMS),
+        )
+        opened_rows = cursor.fetchall()
+
+    saved_embeddings = [parse_vector(row["embedding"]) for row in saved_rows]
+    opened_embeddings = [parse_vector(row["embedding"]) for row in opened_rows]
+
+    profile = build_user_profile_vector(
+        preferences["topics"],
+        saved_embeddings,
+        opened_embeddings=opened_embeddings,
     )
+    _persist_profile_vector(connection, user_id, profile)
+    return profile
 
 
 def _paper_to_payload(
     row: dict[str, Any],
     topics: list[dict[str, Any]],
-    saved_ids: set[str],
-    dismissed_ids: set[str],
 ) -> dict[str, Any]:
     return {
         "id": row["id"],
@@ -548,14 +695,17 @@ def _paper_to_payload(
         "publishedAt": row["published_at"].isoformat(),
         "updatedAt": row["updated_at"].isoformat(),
         "url": row["url"],
-        "embedding": parse_vector(row["embedding"]),
         "cluster_id": row["cluster_id"],
         "clusterId": row["cluster_id"],
         "cluster_label": row["cluster_label"],
         "clusterLabel": row["cluster_label"],
         "topics": topics,
-        "isSaved": row["id"] in saved_ids,
-        "isDismissed": row["id"] in dismissed_ids,
+        "isSaved": bool(row.get("is_saved", False)),
+        "isDismissed": bool(row.get("is_dismissed", False)),
+        "semantic_score": float(row.get("semantic_score", 0.0)),
+        "saved_similarity": float(row.get("saved_similarity", 0.0)),
+        "open_similarity": float(row.get("open_similarity", 0.0)),
+        "dismiss_penalty": float(row.get("dismiss_penalty", 0.0)),
     }
 
 
@@ -593,28 +743,13 @@ def _serialize_paper(paper: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _rank_digest_pool(
-    papers: list[dict[str, Any]],
-    *,
-    preferences: dict[str, Any],
-    saved_embeddings: list[list[float]],
-    opened_embeddings: list[list[float]],
-    dismissed_embeddings: list[list[float]],
-) -> list[dict[str, Any]]:
-    return rank_papers_for_user(
-        papers,
-        selected_topics=preferences["topics"],
-        followed_authors=preferences["authors"],
-        preferred_categories=preferences["categories"],
-        saved_embeddings=saved_embeddings,
-        dismissed_embeddings=dismissed_embeddings,
-        opened_embeddings=opened_embeddings,
-    )
-
-
 def _visible_ranked_papers(ranked: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [paper for paper in ranked if not paper["isDismissed"]]
 
+
+# ---------------------------------------------------------------------------
+# Public entry points
+# ---------------------------------------------------------------------------
 
 def build_digest_response(connection, user_id: str, digest_date: date) -> dict[str, Any]:
     resolved_date = _latest_available_digest_date(connection, digest_date)
@@ -627,16 +762,17 @@ def build_digest_response(connection, user_id: str, digest_date: date) -> dict[s
             "papers": [],
         }
 
-    paper_rows = _paper_rows_for_date(connection, resolved_date)
+    preferences = _user_preferences(connection, user_id)
+    profile_vector = _resolve_profile_vector(connection, user_id, preferences)
+    profile_lit = vector_literal(profile_vector)
+    centroids = _interaction_centroids(connection, user_id)
+
+    paper_rows = _paper_rows_with_scores(connection, resolved_date, user_id, profile_lit, centroids)
     paper_ids = [row["id"] for row in paper_rows]
     topics_by_paper = _topics_for_papers(connection, paper_ids)
-    preferences = _user_preferences(connection, user_id)
-    saved_ids, saved_embeddings = _interaction_embeddings(connection, user_id, "save")
-    dismissed_ids, dismissed_embeddings = _interaction_embeddings(connection, user_id, "dismiss")
-    _opened_ids, opened_embeddings = _interaction_embeddings(connection, user_id, "open")
 
     papers = [
-        _paper_to_payload(row, topics_by_paper.get(row["id"], []), saved_ids, dismissed_ids)
+        _paper_to_payload(row, topics_by_paper.get(row["id"], []))
         for row in paper_rows
     ]
     preferred_categories = set(preferences["categories"])
@@ -648,40 +784,16 @@ def build_digest_response(connection, user_id: str, digest_date: date) -> dict[s
 
     did_backfill_categories = False
     if not preferred_categories:
-        ranked = _visible_ranked_papers(
-            _rank_digest_pool(
-                papers,
-                preferences=preferences,
-                saved_embeddings=saved_embeddings,
-                opened_embeddings=opened_embeddings,
-                dismissed_embeddings=dismissed_embeddings,
-            )
-        )
+        ranked = _visible_ranked_papers(_rank_papers(papers, preferences=preferences))
     else:
-        ranked_matching = _visible_ranked_papers(
-            _rank_digest_pool(
-                matching,
-                preferences=preferences,
-                saved_embeddings=saved_embeddings,
-                opened_embeddings=opened_embeddings,
-                dismissed_embeddings=dismissed_embeddings,
-            )
-        )
+        ranked_matching = _visible_ranked_papers(_rank_papers(matching, preferences=preferences))
         if len(ranked_matching) >= MIN_CATEGORY_FEED_SIZE:
             ranked = ranked_matching
         else:
             did_backfill_categories = True
             matching_ids = {paper["id"] for paper in matching}
             backfill_candidates = [paper for paper in papers if paper["id"] not in matching_ids]
-            ranked_backfill = _visible_ranked_papers(
-                _rank_digest_pool(
-                    backfill_candidates,
-                    preferences=preferences,
-                    saved_embeddings=saved_embeddings,
-                    opened_embeddings=opened_embeddings,
-                    dismissed_embeddings=dismissed_embeddings,
-                )
-            )
+            ranked_backfill = _visible_ranked_papers(_rank_papers(backfill_candidates, preferences=preferences))
             needed = max(MIN_CATEGORY_FEED_SIZE - len(ranked_matching), 0)
             ranked = ranked_matching + ranked_backfill[:needed]
 
@@ -696,30 +808,30 @@ def build_digest_response(connection, user_id: str, digest_date: date) -> dict[s
 
 
 def build_paper_response(connection, user_id: str, paper_id: str) -> dict[str, Any]:
-    row = _paper_row_by_id(connection, paper_id)
+    preferences = _user_preferences(connection, user_id)
+    profile_vector = _resolve_profile_vector(connection, user_id, preferences)
+    profile_lit = vector_literal(profile_vector)
+    centroids = _interaction_centroids(connection, user_id)
+
+    row = _single_paper_with_scores(connection, paper_id, user_id, profile_lit, centroids)
     if row is None:
         return {"paper": None, "summary": None, "summarySource": None}
 
-    preferences = _user_preferences(connection, user_id)
-    saved_ids, saved_embeddings = _interaction_embeddings(connection, user_id, "save")
-    dismissed_ids, dismissed_embeddings = _interaction_embeddings(connection, user_id, "dismiss")
-    _opened_ids, opened_embeddings = _interaction_embeddings(connection, user_id, "open")
     topics_by_paper = _topics_for_papers(connection, [paper_id])
-    selected = _paper_to_payload(row, topics_by_paper.get(paper_id, []), saved_ids, dismissed_ids)
+    selected = _paper_to_payload(row, topics_by_paper.get(paper_id, []))
 
-    ranked = rank_papers_for_user(
-        [selected],
+    now = datetime.now(timezone.utc)
+    scored = _score_paper(
+        selected,
         selected_topics=preferences["topics"],
         followed_authors=preferences["authors"],
         preferred_categories=preferences["categories"],
-        saved_embeddings=saved_embeddings,
-        dismissed_embeddings=dismissed_embeddings,
-        opened_embeddings=opened_embeddings,
-    )[0]
+        now=now,
+    )
 
-    summary, summary_source = get_or_create_summary(connection, paper_id, ranked["title"], ranked["abstract"])
+    summary, summary_source = get_or_create_summary(connection, paper_id, scored["title"], scored["abstract"])
     return {
-        "paper": _serialize_paper(ranked),
+        "paper": _serialize_paper(scored),
         "summary": summary,
         "summarySource": summary_source,
     }

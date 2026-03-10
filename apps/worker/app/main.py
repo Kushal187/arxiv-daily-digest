@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from datetime import date, datetime, timezone
 from typing import Any
 
@@ -7,11 +8,18 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from pydantic import BaseModel
 
 from .config import settings
-from .db import get_connection
+from .db import close_pool, get_connection
 from .services.ingest import run_daily_ingest
-from .services.ranking import build_digest_response, build_paper_response
+from .services.ranking import build_digest_response, build_paper_response, refresh_user_profile
 
-app = FastAPI(title="arXiv Daily Digest Worker")
+
+@asynccontextmanager
+async def lifespan(application: FastAPI):
+    yield
+    close_pool()
+
+
+app = FastAPI(title="arXiv Daily Digest Worker", lifespan=lifespan)
 
 
 class DailyIngestRequest(BaseModel):
@@ -57,3 +65,10 @@ def paper_detail(paper_id: str, user_id: str = Query(alias="userId")) -> dict[st
             raise HTTPException(status_code=404, detail="Paper not found")
 
         return payload
+
+
+@app.post("/internal/users/{user_id}/refresh-profile", dependencies=[Depends(require_internal_token)])
+def user_refresh_profile(user_id: str) -> dict[str, Any]:
+    with get_connection() as connection:
+        refresh_user_profile(connection, user_id)
+    return {"ok": True}

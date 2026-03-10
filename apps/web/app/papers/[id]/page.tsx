@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { TOPIC_TAXONOMY } from "@arxiv-digest/shared";
+import { ExpandableAbstract } from "../../../components/expandable-abstract";
 import { PaperActions } from "../../../components/paper-actions";
 import { PaperSummary } from "../../../components/paper-summary";
 import { auth } from "../../../lib/auth";
@@ -34,7 +35,8 @@ export default async function PaperDetailPage({
         <p className="eyebrow">{paper.primaryCategory.toLowerCase()}</p>
         <h1 className="paper-title detail">{paper.title}</h1>
         <p className="paper-meta">{paper.authors.join(", ")}</p>
-        <p>{paper.abstract}</p>
+        <PaperSummary summary={response.summary} summarySource={response.summarySource} />
+        <ExpandableAbstract abstract={paper.abstract} />
         <div className="metadata-row">
           {paper.categories.map((category) => (
             <span key={category} className="metadata-tag">
@@ -64,7 +66,6 @@ export default async function PaperDetailPage({
             </Link>
           </p>
         </div>
-        <PaperSummary summary={response.summary} summarySource={response.summarySource} />
       </article>
     </main>
   );

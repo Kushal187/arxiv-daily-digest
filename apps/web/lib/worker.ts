@@ -74,3 +74,14 @@ export function fetchPaperWithCacheStatus(userId: string, paperId: string) {
       )
   });
 }
+
+export async function refreshUserProfile(userId: string) {
+  try {
+    await callWorker<{ ok: boolean }>(
+      `/internal/users/${encodeURIComponent(userId)}/refresh-profile`,
+      { method: "POST" }
+    );
+  } catch {
+    // Profile refresh is best-effort; stale profile will be recomputed on next digest request.
+  }
+}

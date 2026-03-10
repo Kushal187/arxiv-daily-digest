@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import math
 from functools import lru_cache
 
 
+logger = logging.getLogger(__name__)
+
 EMBED_DIM = 384
+_hash_fallback_warned = False
 
 
 def _normalize(vector: list[float]) -> list[float]:
@@ -14,6 +18,14 @@ def _normalize(vector: list[float]) -> list[float]:
 
 
 def _hash_embedding(text: str) -> list[float]:
+    global _hash_fallback_warned
+    if not _hash_fallback_warned:
+        logger.warning(
+            "sentence-transformers not available — using hash-based fallback embeddings. "
+            "Semantic similarity will be degraded. Install sentence-transformers for proper embeddings."
+        )
+        _hash_fallback_warned = True
+
     vector = [0.0] * EMBED_DIM
     tokens = [token for token in text.lower().split() if token]
     if not tokens:
@@ -48,6 +60,19 @@ def embed_text(text: str) -> list[float]:
 
     result = model.encode([text], normalize_embeddings=True)[0]
     return [float(value) for value in result]
+
+
+def embed_texts_batch(texts: list[str]) -> list[list[float]]:
+    """Embed multiple texts at once, leveraging batch processing when the model is available."""
+    if not texts:
+        return []
+
+    model = _load_sentence_transformer()
+    if model is None:
+        return [_hash_embedding(text) for text in texts]
+
+    results = model.encode(texts, normalize_embeddings=True, batch_size=64)
+    return [[float(value) for value in row] for row in results]
 
 
 def vector_literal(vector: list[float]) -> str:

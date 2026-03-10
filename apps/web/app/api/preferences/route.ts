@@ -3,6 +3,7 @@ import type { PreferencesPayload } from "@arxiv-digest/shared";
 import { auth } from "../../../lib/auth";
 import { invalidateUserCache, PREFERENCE_AND_RANKING_NAMESPACES } from "../../../lib/cache";
 import { replacePreferences } from "../../../lib/queries";
+import { refreshUserProfile } from "../../../lib/worker";
 
 export async function PUT(request: Request) {
   const session = await auth();
@@ -21,6 +22,7 @@ export async function PUT(request: Request) {
     categories: Array.isArray(payload.categories) ? payload.categories : []
   });
   await invalidateUserCache(session.user.id, PREFERENCE_AND_RANKING_NAMESPACES);
+  refreshUserProfile(session.user.id);
 
   return NextResponse.json({ ok: true });
 }

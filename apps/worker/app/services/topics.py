@@ -4,6 +4,7 @@ from functools import lru_cache
 from typing import Any
 
 from .embeddings import embed_text
+from .similarity import cosine_similarity
 
 
 TOPIC_DEFINITIONS = [
@@ -184,18 +185,9 @@ TOPIC_DEFINITIONS = [
 HIDE_THRESHOLD = 0.45
 
 
-def cosine_similarity(left: list[float], right: list[float]) -> float:
-    if not left or not right:
-        return 0.0
-
-    numerator = sum(a * b for a, b in zip(left, right))
-    left_norm = sum(value * value for value in left) ** 0.5 or 1.0
-    right_norm = sum(value * value for value in right) ** 0.5 or 1.0
-    return numerator / (left_norm * right_norm)
-
-
 def _normalize_similarity(value: float) -> float:
-    return max(0.0, min((value + 1.0) / 2.0, 1.0))
+    """Map cosine similarity to [0, 1] with a steeper curve that penalizes low similarity."""
+    return max(0.0, min(value, 1.0))
 
 
 def _keyword_score(text: str, keywords: dict[str, float]) -> float:

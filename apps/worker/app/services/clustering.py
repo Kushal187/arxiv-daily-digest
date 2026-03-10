@@ -6,21 +6,14 @@ from datetime import date
 
 
 STOPWORDS = {
-    "the",
-    "and",
-    "for",
-    "with",
-    "from",
-    "using",
-    "into",
-    "towards",
-    "via",
-    "based",
-    "new",
-    "large",
-    "language",
-    "model",
-    "models",
+    "the", "and", "for", "with", "from", "using", "into", "towards", "via",
+    "based", "new", "large", "language", "model", "models",
+    "data", "network", "networks", "neural", "deep", "learning", "method",
+    "methods", "approach", "approaches", "system", "systems", "propose",
+    "proposed", "results", "performance", "training", "efficient", "analysis",
+    "task", "tasks", "framework", "our", "can", "this", "that", "are", "also",
+    "which", "show", "use", "paper", "study", "present", "demonstrate",
+    "improved", "novel", "existing", "achieve", "state", "art",
 }
 
 

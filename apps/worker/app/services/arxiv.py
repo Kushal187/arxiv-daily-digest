@@ -1,15 +1,23 @@
 from __future__ import annotations
 
+import logging
+import time
 from datetime import datetime, timezone
 from typing import Any
+from urllib.error import HTTPError, URLError
 from urllib.parse import quote_plus
 from urllib.request import urlopen
 import re
 import xml.etree.ElementTree as ET
 
 
+logger = logging.getLogger(__name__)
+
 ARXIV_API_URL = "https://export.arxiv.org/api/query"
 ATOM_NS = {"atom": "http://www.w3.org/2005/Atom"}
+REQUEST_DELAY_SECONDS = 3.5
+MAX_RETRIES = 3
+RETRY_BACKOFF_SECONDS = 5
 
 
 def canonicalize_identifier(identifier: str) -> tuple[str, int]:
@@ -73,7 +81,10 @@ def build_query(categories: list[str], max_results: int) -> str:
 def fetch_recent_entries(categories: list[str], max_results_per_category: int = 100) -> list[dict[str, Any]]:
     entries: dict[tuple[str, int], dict[str, Any]] = {}
 
-    for category in categories:
+    for index, category in enumerate(categories):
+        if index > 0:
+            time.sleep(REQUEST_DELAY_SECONDS)
+
         category_entries = _fetch_entries_for_categories([category], max_results=max_results_per_category)
         for entry in category_entries:
             key = (entry["canonical_arxiv_id"], entry["arxiv_version"])
@@ -85,7 +96,19 @@ def fetch_recent_entries(categories: list[str], max_results_per_category: int = 
 
 
 def _fetch_entries_for_categories(categories: list[str], max_results: int) -> list[dict[str, Any]]:
-    with urlopen(build_query(categories, max_results=max_results)) as response:
-        payload = response.read()
+    url = build_query(categories, max_results=max_results)
 
-    return parse_feed(payload)
+    for attempt in range(MAX_RETRIES):
+        try:
+            with urlopen(url, timeout=30) as response:
+                payload = response.read()
+            return parse_feed(payload)
+        except (HTTPError, URLError, TimeoutError) as exc:
+            if attempt == MAX_RETRIES - 1:
+                logger.error("arXiv API request failed after %d retries: %s", MAX_RETRIES, exc)
+                raise
+            wait = RETRY_BACKOFF_SECONDS * (attempt + 1)
+            logger.warning("arXiv API request failed (attempt %d/%d), retrying in %.1fs: %s", attempt + 1, MAX_RETRIES, wait, exc)
+            time.sleep(wait)
+
+    return []

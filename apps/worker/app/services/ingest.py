@@ -7,7 +7,7 @@ from typing import Any
 from ..db import advisory_lock_key, get_connection
 from .arxiv import fetch_recent_entries
 from .clustering import cluster_papers
-from .embeddings import embed_text, vector_literal
+from .embeddings import embed_texts_batch, vector_literal
 from .topics import infer_topics
 
 
@@ -176,9 +176,11 @@ def run_daily_ingest(run_date: date | None = None, force: bool = False) -> dict[
                 if window_start <= paper["published_at"] <= window_end
             ]
 
+            texts_to_embed = [f"{paper['title']}\n\n{paper['abstract']}" for paper in papers]
+            embeddings = embed_texts_batch(texts_to_embed)
+
             enriched = []
-            for paper in papers:
-                embedding = embed_text(f"{paper['title']}\n\n{paper['abstract']}")
+            for paper, embedding in zip(papers, embeddings):
                 topics = infer_topics(paper["title"], paper["abstract"], paper["categories"], embedding=embedding)
                 paper["embedding"] = embedding
                 paper["topics"] = topics
