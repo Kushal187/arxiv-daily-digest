@@ -23,17 +23,17 @@ export default async function DigestPage() {
   const digest = await fetchDigest(session.user.id, todayString());
 
   return (
-    <main className="grid">
-      <section className="panel">
-        <p className="subtle">Today&apos;s ranked feed</p>
-        <h1>{digest.date}</h1>
-        <p>
-          Ranked against your selected topics, category preferences, followed authors, saved papers,
-          and dismissal history.
+    <main className="page">
+      <section className="page-header">
+        <p className="eyebrow">daily digest</p>
+        <h1>{new Date(digest.date).toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })}</h1>
+        <p className="page-description">
+          Ranked against selected topics, followed authors, category preferences, saved papers, and
+          dismissals.
         </p>
       </section>
 
-      <section className="digest-grid">
+      <section className="feed-list">
         {digest.papers.length ? (
           digest.papers.map((paper) => <DigestCard key={paper.id} paper={paper} />)
         ) : (

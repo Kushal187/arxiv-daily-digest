@@ -13,31 +13,33 @@ export default async function SavedPage() {
   const saved = await getSavedPapers(session.user.id);
 
   return (
-    <main className="grid">
-      <section className="saved-list">
-        <p className="subtle">Saved papers</p>
+    <main className="page">
+      <section className="page-header">
+        <p className="eyebrow">saved</p>
         <h1>Your reading queue</h1>
+      </section>
+      <section className="feed-list">
         {saved.length ? (
-          <div className="digest-grid">
+          <>
             {saved.map((paper) => (
-              <article key={paper.id} className="paper-card">
-                <h2>
+              <article key={paper.id} className="paper-row">
+                <h2 className="paper-title">
                   <Link href={`/papers/${paper.id}`}>{paper.title}</Link>
                 </h2>
-                <p className="subtle">
+                <p className="paper-meta">
                   {paper.authors.join(", ")} · {new Date(paper.published_at).toLocaleDateString()}
                 </p>
-                <p>{paper.abstract}</p>
-                <div className="chip-row">
+                <p className="paper-abstract expanded">{paper.abstract}</p>
+                <div className="metadata-row">
                   {paper.categories.map((category) => (
-                    <span key={category} className="meta-chip">
-                      {category}
+                    <span key={category} className="metadata-tag">
+                      {category.toLowerCase()}
                     </span>
                   ))}
                 </div>
               </article>
             ))}
-          </div>
+          </>
         ) : (
           <div className="empty-state">
             <p>You have not saved any papers yet.</p>

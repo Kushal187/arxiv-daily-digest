@@ -26,39 +26,34 @@ export default async function PaperDetailPage({
   const paper = response.paper;
 
   return (
-    <main className="grid">
+    <main className="page">
       <article className="paper-detail">
-        <p className="subtle">{paper.primaryCategory}</p>
-        <h1>{paper.title}</h1>
-        <p className="subtle">{paper.authors.join(", ")}</p>
+        <p className="eyebrow">{paper.primaryCategory.toLowerCase()}</p>
+        <h1 className="paper-title detail">{paper.title}</h1>
+        <p className="paper-meta">{paper.authors.join(", ")}</p>
         <p>{paper.abstract}</p>
-        <div className="chip-row">
+        <div className="metadata-row">
           {paper.categories.map((category) => (
-            <span key={category} className="meta-chip">
-              {category}
+            <span key={category} className="metadata-tag">
+              {category.toLowerCase()}
             </span>
           ))}
           {paper.topics
             .filter((topic) => !topic.isHidden)
             .map((topic) => (
-              <span key={topic.slug} className="topic-chip">
+              <span key={topic.slug} className="metadata-tag">
                 {topic.slug}
               </span>
             ))}
         </div>
-        <div className="chip-row">
-          {paper.reasons.map((reason) => (
-            <span key={`${paper.id}-${reason.label}`} className="reason-chip">
-              {reason.label}
-            </span>
-          ))}
-        </div>
+        {paper.reasons.length ? <p className="reason-line">{paper.reasons.map((reason) => reason.label).join(" · ")}</p> : null}
         <PaperActions
           paperId={paper.id}
+          paperUrl={paper.url}
           initialSaved={paper.isSaved}
           initialDismissed={paper.isDismissed}
         />
-        <div className="section-block">
+        <div className="detail-section">
           <h2>Original paper</h2>
           <p>
             <Link href={paper.url} target="_blank">
@@ -66,16 +61,16 @@ export default async function PaperDetailPage({
             </Link>
           </p>
         </div>
-        <div className="section-block">
+        <div className="detail-section">
           <h2>Explain this paper</h2>
           {env.explainEnabled ? (
             response.summary ? (
               <p>{response.summary}</p>
             ) : (
-              <p className="subtle">No cached explanation exists yet for this paper.</p>
+              <p className="page-description">No cached explanation exists yet for this paper.</p>
             )
           ) : (
-            <p className="subtle">Explanation is disabled in this environment.</p>
+            <p className="page-description">Explanation is disabled in this environment.</p>
           )}
         </div>
       </article>

@@ -1,4 +1,5 @@
 import type { PreferencesPayload } from "@arxiv-digest/shared";
+import { matchFollowedAuthors } from "./authors";
 import { sql } from "./db";
 
 export type AppUserRecord = {
@@ -205,4 +206,79 @@ export async function getSavedPapers(userId: string) {
   `;
 
   return rows;
+}
+
+export async function getFollowedAuthorsDashboard(userId: string) {
+  const preferences = await getUserPreferences(userId);
+  const followedAuthors = preferences.followedAuthors;
+
+  const recentRows = await sql<{
+    id: string;
+    title: string;
+    authors: string[];
+    published_at: string;
+    url: string;
+  }[]>`
+    select id, title, authors, published_at::text, url
+    from papers
+    where published_at >= now() - interval '90 days'
+    order by published_at desc
+    limit 300
+  `;
+
+  const perAuthor = new Map(
+    followedAuthors.map((author) => [
+      author,
+      {
+        name: author,
+        recentMatchCount: 0,
+        recentMatches: [] as {
+          id: string;
+          title: string;
+          authors: string[];
+          publishedAt: string;
+          url: string;
+          matchedPaperAuthor: string;
+        }[]
+      }
+    ])
+  );
+
+  for (const paper of recentRows) {
+    const matches = matchFollowedAuthors(followedAuthors, paper.authors);
+    for (const match of matches) {
+      const bucket = perAuthor.get(match.followed);
+      if (!bucket) {
+        continue;
+      }
+
+      bucket.recentMatchCount += 1;
+      if (bucket.recentMatches.length < 5) {
+        bucket.recentMatches.push({
+          id: paper.id,
+          title: paper.title,
+          authors: paper.authors,
+          publishedAt: paper.published_at,
+          url: paper.url,
+          matchedPaperAuthor: match.paperAuthor
+        });
+      }
+    }
+  }
+
+  const authors = Array.from(perAuthor.values()).sort(
+    (left, right) => right.recentMatchCount - left.recentMatchCount || left.name.localeCompare(right.name)
+  );
+
+  const recentPapers = authors
+    .flatMap((author) =>
+      author.recentMatches.map((paper) => ({
+        ...paper,
+        followedAuthor: author.name
+      }))
+    )
+    .sort((left, right) => right.publishedAt.localeCompare(left.publishedAt))
+    .slice(0, 15);
+
+  return { authors, recentPapers };
 }

@@ -3,6 +3,8 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import date, datetime, timezone
 import math
+import re
+import unicodedata
 from typing import Any
 
 from .embeddings import embed_text
@@ -19,6 +21,88 @@ WEIGHTS = {
     "dismiss_penalty": -0.2,
     "diversity_penalty": -0.06,
 }
+
+
+def normalize_author_name(name: str) -> str:
+    normalized = unicodedata.normalize("NFKD", name)
+    normalized = "".join(char for char in normalized if not unicodedata.combining(char))
+    normalized = re.sub(r"[^a-z0-9\s-]", " ", normalized.lower())
+    return re.sub(r"\s+", " ", normalized).strip()
+
+
+def author_name_parts(name: str) -> list[str]:
+    return [part for part in normalize_author_name(name).split(" ") if part]
+
+
+def levenshtein_distance(left: str, right: str) -> int:
+    if left == right:
+        return 0
+    if not left:
+        return len(right)
+    if not right:
+        return len(left)
+
+    previous = list(range(len(right) + 1))
+    for row, left_char in enumerate(left, start=1):
+        diagonal = previous[0]
+        previous[0] = row
+        for column, right_char in enumerate(right, start=1):
+            next_diagonal = previous[column]
+            cost = 0 if left_char == right_char else 1
+            previous[column] = min(previous[column] + 1, previous[column - 1] + 1, diagonal + cost)
+            diagonal = next_diagonal
+    return previous[-1]
+
+
+def score_author_match(followed: str, paper_author: str) -> float:
+    followed_normalized = normalize_author_name(followed)
+    paper_normalized = normalize_author_name(paper_author)
+    if not followed_normalized or not paper_normalized:
+        return 0.0
+    if followed_normalized == paper_normalized:
+        return 1.0
+
+    followed_parts = author_name_parts(followed)
+    paper_parts = author_name_parts(paper_author)
+    if not followed_parts or not paper_parts:
+        return 0.0
+
+    followed_last = followed_parts[-1]
+    paper_last = paper_parts[-1]
+    followed_first_initial = followed_parts[0][0]
+    paper_first_initial = paper_parts[0][0]
+
+    if followed_last == paper_last and followed_first_initial == paper_first_initial:
+        return 0.9
+
+    if (
+        followed_first_initial == paper_first_initial
+        and len(followed_last) >= 5
+        and len(paper_last) >= 5
+        and levenshtein_distance(followed_last, paper_last) <= 1
+    ):
+        return 0.78
+
+    return 0.0
+
+
+def match_followed_authors(followed_authors: list[str], paper_authors: list[str]) -> list[dict[str, Any]]:
+    matches: list[dict[str, Any]] = []
+    for followed in followed_authors:
+        best_match: dict[str, Any] | None = None
+        for paper_author in paper_authors:
+            score = score_author_match(followed, paper_author)
+            if best_match is None or score > best_match["score"]:
+                best_match = {
+                    "followed": followed,
+                    "paper_author": paper_author,
+                    "score": score,
+                }
+        if best_match and best_match["score"] > 0:
+            matches.append(best_match)
+
+    matches.sort(key=lambda item: item["score"], reverse=True)
+    return matches
 
 
 def cosine_similarity(left: list[float], right: list[float]) -> float:
@@ -98,10 +182,13 @@ def generate_reasons(feature_scores: dict[str, float], paper: dict[str, Any], se
         )
 
     if feature_scores["author"] > 0:
+        author_label = "author you follow"
+        if paper["author_matches"]:
+            author_label = f"author you follow: {paper['author_matches'][0]['followed']}"
         reasons.append(
             {
                 "type": "author",
-                "label": "author you follow",
+                "label": author_label,
                 "score": round(feature_scores["author"], 3),
             }
         )
@@ -147,12 +234,14 @@ def rank_papers_for_user(
         paper_vector = paper["embedding"]
         visible_topics = [topic["slug"] for topic in paper["topics"] if not topic["is_hidden"]]
         paper["visible_topics"] = visible_topics
+        author_matches = match_followed_authors(followed_authors, paper["authors"])
+        paper["author_matches"] = author_matches
 
         feature_scores = {
             "semantic": cosine_similarity(profile_vector, paper_vector),
             "topic": 1.0 if set(selected_topics).intersection(visible_topics) else 0.0,
             "category": 1.0 if paper["primary_category"] in preferred_categories else 0.0,
-            "author": 1.0 if set(followed_authors).intersection(set(paper["authors"])) else 0.0,
+            "author": author_matches[0]["score"] if author_matches else 0.0,
             "recency": recency_score(paper["published_at"], now),
             "saved_similarity": similarity_to_saved(paper_vector, saved_embeddings),
             "dismiss_penalty": penalty_from_dismissed(paper_vector, dismissed_embeddings),

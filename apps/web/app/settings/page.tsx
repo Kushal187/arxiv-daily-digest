@@ -19,7 +19,7 @@ export default async function SettingsPage() {
       initialCategories={preferences.categories}
       title="Settings"
       description="Adjust topics, authors, and categories that seed your ranking model."
-      submitLabel="Save preferences"
+      submitLabel="Save changes"
     />
   );
 }

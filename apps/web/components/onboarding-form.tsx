@@ -83,33 +83,39 @@ export function OnboardingForm({
   }
 
   return (
-    <section className="panel">
-      <div className="panel-header">
+    <section className="settings-page">
+      <div className="page-header">
+        <p className="eyebrow">preferences</p>
         <h1>{title}</h1>
-        <p className="subtle">{description}</p>
+        <p className="page-description">{description}</p>
       </div>
 
-      <div className="section-block">
+      <div className="settings-section">
         <h2>Pick your topics</h2>
-        <p className="subtle">Choose 3 to 8. These seed your cold-start ranking profile.</p>
-        <div className="topic-grid">
+        <p className="section-note">Choose 3 to 8. These seed your cold-start ranking profile.</p>
+        <p className="selection-count">
+          selected {topics.length} / 8
+        </p>
+        <div className="settings-grid">
           {TOPIC_TAXONOMY.map((topic) => (
-            <button
-              key={topic.slug}
-              type="button"
-              className={topics.includes(topic.slug) ? "taxonomy-chip active" : "taxonomy-chip"}
-              onClick={() => toggleTopic(topic.slug)}
-            >
-              <strong>{topic.label}</strong>
-              <span>{topic.description}</span>
-            </button>
+            <label key={topic.slug} className="checkbox-row">
+              <input
+                type="checkbox"
+                checked={topics.includes(topic.slug)}
+                onChange={() => toggleTopic(topic.slug)}
+              />
+              <span>
+                <strong>{topic.label}</strong>
+                <small>{topic.description}</small>
+              </span>
+            </label>
           ))}
         </div>
       </div>
 
-      <div className="section-block">
+      <div className="settings-section">
         <h2>Follow authors</h2>
-        <p className="subtle">Optional comma-separated list of labs or researchers you track.</p>
+        <p className="section-note">Optional comma-separated list of labs or researchers you track.</p>
         <textarea
           className="text-input"
           rows={3}
@@ -119,27 +125,47 @@ export function OnboardingForm({
         />
       </div>
 
-      <div className="section-block">
-        <h2>Preferred arXiv categories</h2>
-        <div className="chip-row">
-          {DEFAULT_ARXIV_CATEGORIES.map((category) => (
+      <div className="settings-section">
+        <div className="section-heading">
+          <h2>Preferred arXiv categories</h2>
+          <span className="tooltip-wrap">
             <button
-              key={category}
               type="button"
-              className={categories.includes(category) ? "meta-chip active" : "meta-chip"}
-              onClick={() => toggleCategory(category)}
+              className="info-trigger"
+              aria-label="Explain arXiv categories"
+              aria-describedby="arxiv-category-tooltip"
             >
-              {category}
+              i
             </button>
+            <span id="arxiv-category-tooltip" role="tooltip" className="tooltip-bubble">
+              arXiv categories are the subject buckets from arXiv itself, such as cs.AI, cs.LG,
+              and cs.CL. They narrow the candidate pool before ranking.
+            </span>
+          </span>
+        </div>
+        <div className="settings-grid compact">
+          {DEFAULT_ARXIV_CATEGORIES.map((category) => (
+            <label key={category} className="checkbox-row compact">
+              <input
+                type="checkbox"
+                checked={categories.includes(category)}
+                onChange={() => toggleCategory(category)}
+              />
+              <span>
+                <strong>{category}</strong>
+              </span>
+            </label>
           ))}
         </div>
       </div>
 
       {error ? <p className="error-text">{error}</p> : null}
 
-      <button className="primary-button" disabled={isPending} onClick={onSubmit}>
-        {isPending ? "Saving..." : submitLabel}
-      </button>
+      <div className="form-footer">
+        <button className="primary-button" disabled={isPending} onClick={onSubmit}>
+          {isPending ? "saving..." : submitLabel.toLowerCase()}
+        </button>
+      </div>
     </section>
   );
 }

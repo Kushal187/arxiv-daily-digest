@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 
 type Props = {
   paperId: string;
+  paperUrl?: string;
   initialSaved: boolean;
   initialDismissed: boolean;
   compact?: boolean;
@@ -26,6 +27,7 @@ async function sendInteraction(paperId: string, action: string) {
 
 export function PaperActions({
   paperId,
+  paperUrl,
   initialSaved,
   initialDismissed,
   compact = false,
@@ -49,6 +51,7 @@ export function PaperActions({
   return (
     <div className={classes}>
       <button
+        className="action-link"
         disabled={isPending}
         onClick={async () => {
           try {
@@ -61,9 +64,10 @@ export function PaperActions({
           }
         }}
       >
-        {saved ? "Unsave" : "Save"}
+        {saved ? "saved" : "save"}
       </button>
       <button
+        className="action-link"
         disabled={isPending || dismissed}
         onClick={async () => {
           try {
@@ -75,22 +79,48 @@ export function PaperActions({
           }
         }}
       >
-        {dismissed ? "Dismissed" : "Dismiss"}
+        {dismissed ? "dismissed" : "dismiss"}
       </button>
-      <button
-        disabled={isPending}
-        onClick={async () => {
-          try {
-            setIsPending(true);
-            await sendInteraction(paperId, "open");
-            window.location.href = `/papers/${paperId}`;
-          } finally {
-            setIsPending(false);
-          }
-        }}
-      >
-        Open
-      </button>
+      {paperUrl ? (
+        <a
+          className="action-link"
+          href={paperUrl}
+          target="_blank"
+          rel="noreferrer"
+          onClick={async (event) => {
+            event.preventDefault();
+            if (isPending) {
+              return;
+            }
+
+            try {
+              setIsPending(true);
+              await sendInteraction(paperId, "open");
+              window.open(paperUrl, "_blank", "noopener,noreferrer");
+            } finally {
+              setIsPending(false);
+            }
+          }}
+        >
+          open arxiv
+        </a>
+      ) : (
+        <button
+          className="action-link"
+          disabled={isPending}
+          onClick={async () => {
+            try {
+              setIsPending(true);
+              await sendInteraction(paperId, "open");
+              window.location.href = `/papers/${paperId}`;
+            } finally {
+              setIsPending(false);
+            }
+          }}
+        >
+          open
+        </button>
+      )}
     </div>
   );
 }
