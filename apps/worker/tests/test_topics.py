@@ -1,5 +1,6 @@
 import unittest
 
+from apps.worker.app.services.embeddings import embed_text
 from apps.worker.app.services.topics import infer_topics
 
 
@@ -23,6 +24,18 @@ class TopicInferenceTests(unittest.TestCase):
         )
 
         self.assertTrue(any(topic["is_hidden"] for topic in topics))
+
+    def test_embedding_similarity_recovers_topic_without_exact_phrase(self):
+        text = "Dense retrieval systems for ranking enterprise search results with reranking pipelines."
+        topics = infer_topics(
+            "Enterprise search pipelines",
+            text,
+            ["cs.IR"],
+            embedding=embed_text(f"Enterprise search pipelines\n\n{text}"),
+        )
+
+        slugs = [topic["slug"] for topic in topics]
+        self.assertIn("information-retrieval", slugs)
 
 
 if __name__ == "__main__":

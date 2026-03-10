@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { PreferencesPayload } from "@arxiv-digest/shared";
 import { auth } from "../../../lib/auth";
+import { invalidateUserCache, PREFERENCE_AND_RANKING_NAMESPACES } from "../../../lib/cache";
 import { replacePreferences } from "../../../lib/queries";
 
 export async function PUT(request: Request) {
@@ -19,6 +20,7 @@ export async function PUT(request: Request) {
     followedAuthors: Array.isArray(payload.followedAuthors) ? payload.followedAuthors : [],
     categories: Array.isArray(payload.categories) ? payload.categories : []
   });
+  await invalidateUserCache(session.user.id, PREFERENCE_AND_RANKING_NAMESPACES);
 
   return NextResponse.json({ ok: true });
 }

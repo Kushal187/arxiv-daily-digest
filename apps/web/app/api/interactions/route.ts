@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "../../../lib/auth";
+import { invalidateUserCache } from "../../../lib/cache";
 import { recordInteraction } from "../../../lib/queries";
 
 export async function POST(request: Request) {
@@ -18,6 +19,9 @@ export async function POST(request: Request) {
   }
 
   await recordInteraction(session.user.id, payload.paperId, payload.action);
+  if (payload.action !== "open") {
+    await invalidateUserCache(session.user.id);
+  }
 
   return NextResponse.json({ ok: true });
 }

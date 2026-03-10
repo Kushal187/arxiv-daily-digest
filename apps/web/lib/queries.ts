@@ -1,6 +1,8 @@
 import type { PreferencesPayload } from "@arxiv-digest/shared";
 import { matchFollowedAuthors } from "./authors";
+import { loadCachedUserPayload } from "./cache";
 import { sql } from "./db";
+import { dedupeFollowedAuthors } from "./followed-authors";
 
 export type AppUserRecord = {
   id: string;
@@ -96,7 +98,7 @@ export async function getUserById(id: string): Promise<AppUserRecord | null> {
   };
 }
 
-export async function getUserPreferences(userId: string) {
+export async function getUserPreferencesFromDb(userId: string) {
   const [topicRows, authorRows, userRows] = await Promise.all([
     sql<{ topic_slug: string }[]>`
       select topic_slug
@@ -126,7 +128,21 @@ export async function getUserPreferences(userId: string) {
   };
 }
 
+export async function getUserPreferences(userId: string) {
+  const result = await loadCachedUserPayload({
+    userId,
+    namespace: "preferences",
+    identity: "current",
+    ttlSeconds: 60 * 60,
+    load: () => getUserPreferencesFromDb(userId)
+  });
+
+  return result.value;
+}
+
 export async function replacePreferences(userId: string, payload: PreferencesPayload) {
+  const followedAuthors = dedupeFollowedAuthors(payload.followedAuthors);
+
   await sql.begin(async (tx) => {
     await tx`
       update users
@@ -146,7 +162,7 @@ export async function replacePreferences(userId: string, payload: PreferencesPay
       `;
     }
 
-    for (const author of payload.followedAuthors) {
+    for (const author of followedAuthors) {
       await tx`
         insert into user_followed_authors (user_id, author_name)
         values (${userId}, ${author})

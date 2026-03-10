@@ -1,12 +1,14 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "../lib/auth";
+import { getUserPreferences } from "../lib/queries";
 
 export default async function HomePage() {
   const session = await auth();
 
   if (session?.user?.id) {
-    redirect(session.user.onboardingCompleted ? "/digest" : "/onboarding");
+    const preferences = await getUserPreferences(session.user.id);
+    redirect(preferences.onboardingCompleted && preferences.topics.length >= 3 ? "/digest" : "/onboarding");
   }
 
   return (

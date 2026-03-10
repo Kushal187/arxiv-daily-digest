@@ -11,6 +11,7 @@ const TOPIC_LABELS = new Map(TOPIC_TAXONOMY.map((topic) => [topic.slug, topic.la
 export function DigestCard({ paper }: { paper: DigestPaper }) {
   const [expanded, setExpanded] = useState(false);
   const [dismissed, setDismissed] = useState(paper.isDismissed);
+  const [saved, setSaved] = useState(paper.isSaved);
   const visibleTopics = useMemo(
     () => paper.topics.filter((topic) => !topic.isHidden).map((topic) => TOPIC_LABELS.get(topic.slug) ?? topic.slug),
     [paper.topics]
@@ -25,8 +26,9 @@ export function DigestCard({ paper }: { paper: DigestPaper }) {
         <PaperActions
           paperId={paper.id}
           paperUrl={paper.url}
-          initialSaved={paper.isSaved}
+          initialSaved={saved}
           initialDismissed
+          onSavedChange={setSaved}
           onDismissedChange={setDismissed}
         />
       </article>
@@ -36,6 +38,7 @@ export function DigestCard({ paper }: { paper: DigestPaper }) {
   return (
     <article className="paper-row">
       <div className="paper-row-header">
+        {saved ? <span className="saved-pill">Saved</span> : null}
         {primaryReason ? <span className="reason-pill">{primaryReason.label}</span> : null}
         {paper.clusterLabel !== "misc" ? <span className="meta-inline">{paper.clusterLabel}</span> : null}
       </div>
@@ -75,6 +78,7 @@ export function DigestCard({ paper }: { paper: DigestPaper }) {
         initialSaved={paper.isSaved}
         initialDismissed={paper.isDismissed}
         onDismissedChange={setDismissed}
+        onSavedChange={setSaved}
       />
     </article>
   );

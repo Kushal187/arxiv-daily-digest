@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "../../../../lib/auth";
-import { fetchPaper } from "../../../../lib/worker";
+import { fetchPaperWithCacheStatus } from "../../../../lib/worker";
 
 export async function GET(
   _request: Request,
@@ -14,6 +14,10 @@ export async function GET(
   }
 
   const { id } = await context.params;
-  const paper = await fetchPaper(session.user.id, id);
-  return NextResponse.json(paper);
+  const paper = await fetchPaperWithCacheStatus(session.user.id, id);
+  return NextResponse.json(paper.value, {
+    headers: {
+      "X-Cache": paper.status
+    }
+  });
 }

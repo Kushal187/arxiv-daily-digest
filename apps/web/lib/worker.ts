@@ -1,4 +1,5 @@
 import type { DigestResponse, PaperDetailResponse } from "@arxiv-digest/shared";
+import { loadCachedUserPayload } from "./cache";
 import { env } from "./env";
 
 async function callWorker<T>(path: string, init?: RequestInit): Promise<T> {
@@ -21,13 +22,55 @@ async function callWorker<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export async function fetchDigest(userId: string, date: string) {
-  return callWorker<DigestResponse>(
-    `/internal/recommendations/digest?userId=${encodeURIComponent(userId)}&date=${encodeURIComponent(date)}`
-  );
+  const result = await loadCachedUserPayload({
+    userId,
+    namespace: "digest",
+    identity: date,
+    ttlSeconds: 60 * 15,
+    load: () =>
+      callWorker<DigestResponse>(
+        `/internal/recommendations/digest?userId=${encodeURIComponent(userId)}&date=${encodeURIComponent(date)}`
+      )
+  });
+  return result.value;
 }
 
 export async function fetchPaper(userId: string, paperId: string) {
-  return callWorker<PaperDetailResponse>(
-    `/internal/papers/${encodeURIComponent(paperId)}?userId=${encodeURIComponent(userId)}`
-  );
+  const result = await loadCachedUserPayload({
+    userId,
+    namespace: "paper",
+    identity: paperId,
+    ttlSeconds: 60 * 30,
+    load: () =>
+      callWorker<PaperDetailResponse>(
+        `/internal/papers/${encodeURIComponent(paperId)}?userId=${encodeURIComponent(userId)}`
+      )
+  });
+  return result.value;
+}
+
+export function fetchDigestWithCacheStatus(userId: string, date: string) {
+  return loadCachedUserPayload({
+    userId,
+    namespace: "digest",
+    identity: date,
+    ttlSeconds: 60 * 15,
+    load: () =>
+      callWorker<DigestResponse>(
+        `/internal/recommendations/digest?userId=${encodeURIComponent(userId)}&date=${encodeURIComponent(date)}`
+      )
+  });
+}
+
+export function fetchPaperWithCacheStatus(userId: string, paperId: string) {
+  return loadCachedUserPayload({
+    userId,
+    namespace: "paper",
+    identity: paperId,
+    ttlSeconds: 60 * 30,
+    load: () =>
+      callWorker<PaperDetailResponse>(
+        `/internal/papers/${encodeURIComponent(paperId)}?userId=${encodeURIComponent(userId)}`
+      )
+  });
 }

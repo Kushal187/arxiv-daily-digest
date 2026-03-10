@@ -2,26 +2,36 @@ import { redirect } from "next/navigation";
 import { DigestFeed } from "../../components/digest-feed";
 import { DigestHeader } from "../../components/digest-header";
 import { auth } from "../../lib/auth";
+import { isCalendarDateString, utcCalendarDateString } from "../../lib/dates";
 import { getUserPreferences } from "../../lib/queries";
 import { fetchDigest } from "../../lib/worker";
 
-function todayString() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-export default async function DigestPage() {
+export default async function DigestPage({
+  searchParams
+}: {
+  searchParams: Promise<{ date?: string | string[] }>;
+}) {
   const session = await auth();
 
   if (!session?.user?.id) {
     redirect("/");
   }
 
-  const preferences = await getUserPreferences(session.user.id);
+  const params = await searchParams;
+  const requestedDate = Array.isArray(params.date) ? params.date[0] : params.date;
+
+  if (!requestedDate || !isCalendarDateString(requestedDate)) {
+    redirect(`/digest?date=${utcCalendarDateString()}`);
+  }
+
+  const [preferences, digest] = await Promise.all([
+    getUserPreferences(session.user.id),
+    fetchDigest(session.user.id, requestedDate)
+  ]);
+
   if (!preferences.onboardingCompleted || preferences.topics.length < 3) {
     redirect("/onboarding");
   }
-
-  const digest = await fetchDigest(session.user.id, todayString());
 
   return (
     <main className="page">

@@ -1,6 +1,7 @@
 import unittest
+from unittest.mock import patch
 
-from apps.worker.app.services.arxiv import canonicalize_identifier, parse_feed
+from apps.worker.app.services.arxiv import canonicalize_identifier, fetch_recent_entries, parse_feed
 
 
 SAMPLE_FEED = b"""<?xml version="1.0" encoding="UTF-8"?>
@@ -32,6 +33,17 @@ class ArxivParsingTests(unittest.TestCase):
         self.assertEqual(papers[0]["source_id"], "2503.12345v2")
         self.assertEqual(papers[0]["authors"], ["Alice Example", "Bob Example"])
         self.assertEqual(papers[0]["primary_category"], "cs.AI")
+
+    def test_fetch_recent_entries_dedupes_same_paper_across_categories(self):
+        duplicate = parse_feed(SAMPLE_FEED)[0]
+
+        with patch(
+            "apps.worker.app.services.arxiv._fetch_entries_for_categories",
+            side_effect=[[duplicate], [duplicate]],
+        ):
+            papers = fetch_recent_entries(["cs.AI", "cs.IR"], max_results_per_category=5)
+
+        self.assertEqual(len(papers), 1)
 
 
 if __name__ == "__main__":

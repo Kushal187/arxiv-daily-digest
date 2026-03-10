@@ -91,13 +91,21 @@ export function PaperActions({
     });
   }
 
+  const saveButtonClass = saved ? "action-link action-link-save is-active" : "action-link action-link-save";
+
   return (
     <div className={classes}>
-      <button className="action-link" disabled={pending.save} onClick={toggleSave}>
-        {pending.save ? "saving..." : saved ? "saved" : "save"}
+      <button
+        type="button"
+        className={saveButtonClass}
+        aria-pressed={saved}
+        disabled={pending.save}
+        onClick={toggleSave}
+      >
+        {pending.save ? "saving..." : saved ? "remove" : "save"}
       </button>
       {allowDismiss ? (
-        <button className="action-link" disabled={pending.dismiss} onClick={toggleDismiss}>
+        <button type="button" className="action-link" disabled={pending.dismiss} onClick={toggleDismiss}>
           {pending.dismiss ? "working..." : dismissed ? "undo dismiss" : "dismiss"}
         </button>
       ) : null}
@@ -123,6 +131,7 @@ export function PaperActions({
           open
         </button>
       )}
+      {saved && !compact ? <p className="action-status-line">Saved to reading queue.</p> : null}
       {error ? <p className="inline-error">{error}</p> : null}
     </div>
   );

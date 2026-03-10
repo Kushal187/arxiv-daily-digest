@@ -18,7 +18,7 @@ type SavedPaper = {
   visible_topics: { slug: string; confidence: number }[];
 };
 
-const TOPIC_LABELS = new Map(TOPIC_TAXONOMY.map((topic) => [topic.slug, topic.label]));
+const TOPIC_LABELS = new Map<string, string>(TOPIC_TAXONOMY.map((topic) => [topic.slug, topic.label]));
 
 export function SavedQueue({ papers }: { papers: SavedPaper[] }) {
   const [sort, setSort] = useState<"saved" | "published">("saved");

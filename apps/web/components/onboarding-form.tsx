@@ -1,12 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { KeyboardEvent, useState } from "react";
 import {
   DEFAULT_ARXIV_CATEGORIES,
   TOPIC_TAXONOMY,
   type PreferencesPayload,
   type TopicSlug
 } from "@arxiv-digest/shared";
+import {
+  dedupeFollowedAuthors,
+  normalizeFollowedAuthorDisplay,
+  normalizeFollowedAuthorKey
+} from "../lib/followed-authors";
 
 type Props = {
   initialTopics: string[];
@@ -26,7 +31,8 @@ export function OnboardingForm({
   submitLabel
 }: Props) {
   const [topics, setTopics] = useState<TopicSlug[]>(initialTopics as TopicSlug[]);
-  const [authors, setAuthors] = useState(initialAuthors.join(", "));
+  const [authors, setAuthors] = useState<string[]>(() => dedupeFollowedAuthors(initialAuthors));
+  const [authorInput, setAuthorInput] = useState("");
   const [categories, setCategories] = useState<string[]>(
     initialCategories.length ? initialCategories : [...DEFAULT_ARXIV_CATEGORIES]
   );
@@ -45,6 +51,36 @@ export function OnboardingForm({
     );
   }
 
+  function addAuthor(rawValue: string) {
+    const value = normalizeFollowedAuthorDisplay(rawValue);
+    const key = normalizeFollowedAuthorKey(value);
+    if (!value || !key) {
+      return;
+    }
+
+    setAuthors((current) => {
+      if (current.some((author) => normalizeFollowedAuthorKey(author) === key)) {
+        return current;
+      }
+
+      return [...current, value];
+    });
+    setAuthorInput("");
+  }
+
+  function removeAuthor(value: string) {
+    setAuthors((current) => current.filter((author) => author !== value));
+  }
+
+  function handleAuthorKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key !== "Enter" && event.key !== ",") {
+      return;
+    }
+
+    event.preventDefault();
+    addAuthor(authorInput);
+  }
+
   async function onSubmit() {
     if (topics.length < 3 || topics.length > 8) {
       setError("Choose between 3 and 8 topics.");
@@ -53,10 +89,7 @@ export function OnboardingForm({
 
     const payload: PreferencesPayload = {
       topics,
-      followedAuthors: authors
-        .split(",")
-        .map((value) => value.trim())
-        .filter(Boolean),
+      followedAuthors: authors,
       categories
     };
 
@@ -115,14 +148,44 @@ export function OnboardingForm({
 
       <div className="settings-section">
         <h2>Follow authors</h2>
-        <p className="section-note">Optional comma-separated list of labs or researchers you track.</p>
-        <textarea
-          className="text-input"
-          rows={3}
-          value={authors}
-          onChange={(event) => setAuthors(event.target.value)}
-          placeholder="Yann LeCun, Chelsea Finn, Percy Liang"
-        />
+        <p className="section-note">Add researchers or labs one at a time. Press Enter or comma to add them.</p>
+        <div className="author-input-wrap">
+          <input
+            className="text-input"
+            type="text"
+            value={authorInput}
+            onChange={(event) => setAuthorInput(event.target.value)}
+            onKeyDown={handleAuthorKeyDown}
+            placeholder="Yann LeCun"
+          />
+          <button
+            type="button"
+            className="action-link prominent"
+            onClick={() => addAuthor(authorInput)}
+            disabled={!normalizeFollowedAuthorDisplay(authorInput)}
+          >
+            add author
+          </button>
+        </div>
+        {authors.length ? (
+          <div className="author-chip-list">
+            {authors.map((author) => (
+              <span key={author} className="author-chip">
+                {author}
+                <button
+                  type="button"
+                  className="author-chip-remove"
+                  aria-label={`Remove ${author}`}
+                  onClick={() => removeAuthor(author)}
+                >
+                  remove
+                </button>
+              </span>
+            ))}
+          </div>
+        ) : (
+          <p className="section-note">No authors followed yet.</p>
+        )}
       </div>
 
       <div className="settings-section">
