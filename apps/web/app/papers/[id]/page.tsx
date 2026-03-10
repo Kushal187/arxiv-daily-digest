@@ -1,9 +1,12 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import { TOPIC_TAXONOMY } from "@arxiv-digest/shared";
 import { PaperActions } from "../../../components/paper-actions";
+import { PaperSummary } from "../../../components/paper-summary";
 import { auth } from "../../../lib/auth";
-import { env } from "../../../lib/env";
 import { fetchPaper } from "../../../lib/worker";
+
+const TOPIC_LABELS = new Map(TOPIC_TAXONOMY.map((topic) => [topic.slug, topic.label]));
 
 export default async function PaperDetailPage({
   params
@@ -42,7 +45,7 @@ export default async function PaperDetailPage({
             .filter((topic) => !topic.isHidden)
             .map((topic) => (
               <span key={topic.slug} className="metadata-tag">
-                {topic.slug}
+                {TOPIC_LABELS.get(topic.slug) ?? topic.slug}
               </span>
             ))}
         </div>
@@ -61,18 +64,7 @@ export default async function PaperDetailPage({
             </Link>
           </p>
         </div>
-        <div className="detail-section">
-          <h2>Explain this paper</h2>
-          {env.explainEnabled ? (
-            response.summary ? (
-              <p>{response.summary}</p>
-            ) : (
-              <p className="page-description">No cached explanation exists yet for this paper.</p>
-            )
-          ) : (
-            <p className="page-description">Explanation is disabled in this environment.</p>
-          )}
-        </div>
+        <PaperSummary summary={response.summary} summarySource={response.summarySource} />
       </article>
     </main>
   );

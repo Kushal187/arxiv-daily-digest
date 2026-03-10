@@ -1,6 +1,6 @@
 import type { TopicSlug } from "./topics";
 
-export type InteractionType = "open" | "save" | "dismiss" | "unsave";
+export type InteractionType = "open" | "save" | "dismiss" | "unsave" | "undismiss";
 
 export type RecommendationReason =
   | { type: "topic"; label: string; score: number }
@@ -35,6 +35,22 @@ export type DigestPaper = {
   score: number;
   isSaved: boolean;
   isDismissed: boolean;
+};
+
+export type DigestResponse = {
+  requestedDate: string;
+  resolvedDate: string;
+  isFallback: boolean;
+  didBackfillCategories: boolean;
+  papers: DigestPaper[];
+};
+
+export type SummarySource = "extractive" | "llm";
+
+export type PaperDetailResponse = {
+  paper: DigestPaper | null;
+  summary: string | null;
+  summarySource: SummarySource | null;
 };
 
 export type PreferencesPayload = {

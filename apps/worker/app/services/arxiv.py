@@ -70,7 +70,21 @@ def build_query(categories: list[str], max_results: int) -> str:
     )
 
 
-def fetch_recent_entries(categories: list[str], max_results: int = 200) -> list[dict[str, Any]]:
+def fetch_recent_entries(categories: list[str], max_results_per_category: int = 100) -> list[dict[str, Any]]:
+    entries: dict[tuple[str, int], dict[str, Any]] = {}
+
+    for category in categories:
+        category_entries = _fetch_entries_for_categories([category], max_results=max_results_per_category)
+        for entry in category_entries:
+            key = (entry["canonical_arxiv_id"], entry["arxiv_version"])
+            existing = entries.get(key)
+            if existing is None or entry["published_at"] > existing["published_at"]:
+                entries[key] = entry
+
+    return sorted(entries.values(), key=lambda item: item["published_at"], reverse=True)
+
+
+def _fetch_entries_for_categories(categories: list[str], max_results: int) -> list[dict[str, Any]]:
     with urlopen(build_query(categories, max_results=max_results)) as response:
         payload = response.read()
 

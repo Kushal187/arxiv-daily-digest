@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import date, datetime, timezone
+from functools import lru_cache
 import math
 import re
 import unicodedata
@@ -11,16 +12,19 @@ from .embeddings import embed_text
 from .summaries import get_or_create_summary
 
 
-WEIGHTS = {
-    "semantic": 0.42,
-    "topic": 0.16,
+BASE_WEIGHTS = {
+    "semantic": 0.34,
+    "topic": 0.18,
     "category": 0.08,
     "author": 0.12,
     "recency": 0.08,
-    "saved_similarity": 0.18,
-    "dismiss_penalty": -0.2,
-    "diversity_penalty": -0.06,
+    "saved_similarity": 0.14,
+    "open_similarity": 0.06,
+    "dismiss_penalty": -0.18,
 }
+MIN_CATEGORY_FEED_SIZE = 30
+DIVERSITY_RERANK_LIMIT = 50
+DIVERSITY_REPEAT_PENALTY = 0.07
 
 
 def normalize_author_name(name: str) -> str:
@@ -51,6 +55,7 @@ def levenshtein_distance(left: str, right: str) -> int:
             cost = 0 if left_char == right_char else 1
             previous[column] = min(previous[column] + 1, previous[column - 1] + 1, diagonal + cost)
             diagonal = next_diagonal
+
     return previous[-1]
 
 
@@ -64,24 +69,33 @@ def score_author_match(followed: str, paper_author: str) -> float:
 
     followed_parts = author_name_parts(followed)
     paper_parts = author_name_parts(paper_author)
-    if not followed_parts or not paper_parts:
+    if len(followed_parts) < 2 or len(paper_parts) < 2:
         return 0.0
 
+    followed_first = followed_parts[0]
+    paper_first = paper_parts[0]
     followed_last = followed_parts[-1]
     paper_last = paper_parts[-1]
-    followed_first_initial = followed_parts[0][0]
-    paper_first_initial = paper_parts[0][0]
 
-    if followed_last == paper_last and followed_first_initial == paper_first_initial:
-        return 0.9
+    if followed_last == paper_last:
+        if followed_first == paper_first:
+            return 0.92
+
+        if min(len(followed_first), len(paper_first)) >= 3 and (
+            followed_first.startswith(paper_first) or paper_first.startswith(followed_first)
+        ):
+            return 0.88
+
+        if min(len(followed_first), len(paper_first)) >= 4 and levenshtein_distance(followed_first, paper_first) == 1:
+            return 0.84
 
     if (
-        followed_first_initial == paper_first_initial
+        followed_first == paper_first
         and len(followed_last) >= 5
         and len(paper_last) >= 5
-        and levenshtein_distance(followed_last, paper_last) <= 1
+        and levenshtein_distance(followed_last, paper_last) == 1
     ):
-        return 0.78
+        return 0.8
 
     return 0.0
 
@@ -98,7 +112,8 @@ def match_followed_authors(followed_authors: list[str], paper_authors: list[str]
                     "paper_author": paper_author,
                     "score": score,
                 }
-        if best_match and best_match["score"] > 0:
+
+        if best_match and best_match["score"] >= 0.8:
             matches.append(best_match)
 
     matches.sort(key=lambda item: item["score"], reverse=True)
@@ -115,30 +130,42 @@ def cosine_similarity(left: list[float], right: list[float]) -> float:
     return numerator / (left_norm * right_norm)
 
 
-def average_vectors(vectors: list[list[float]]) -> list[float]:
-    if not vectors:
+def weighted_average_vectors(weighted_vectors: list[tuple[list[float], float]]) -> list[float]:
+    if not weighted_vectors:
         return [0.0] * 384
 
-    length = len(vectors[0])
+    length = len(weighted_vectors[0][0])
     totals = [0.0] * length
-    for vector in vectors:
+    total_weight = 0.0
+
+    for vector, weight in weighted_vectors:
+        total_weight += weight
         for index, value in enumerate(vector):
-            totals[index] += value
+            totals[index] += value * weight
 
-    return [value / len(vectors) for value in totals]
+    if total_weight == 0:
+        return [0.0] * length
+
+    return [value / total_weight for value in totals]
 
 
+@lru_cache(maxsize=None)
 def topic_prototype(slug: str) -> list[float]:
     return embed_text(slug.replace("-", " "))
 
 
 def build_user_profile_vector(
-    selected_topics: list[str], followed_authors: list[str], saved_embeddings: list[list[float]]
+    selected_topics: list[str],
+    followed_authors: list[str],
+    saved_embeddings: list[list[float]],
+    opened_embeddings: list[list[float]] | None = None,
 ) -> list[float]:
-    vectors = [topic_prototype(topic) for topic in selected_topics]
-    vectors.extend(embed_text(author) for author in followed_authors)
-    vectors.extend(saved_embeddings)
-    return average_vectors(vectors)
+    weighted_vectors: list[tuple[list[float], float]] = []
+    weighted_vectors.extend((topic_prototype(topic), 1.0) for topic in selected_topics)
+    weighted_vectors.extend((embed_text(author), 0.9) for author in followed_authors)
+    weighted_vectors.extend((embedding, 1.15) for embedding in saved_embeddings)
+    weighted_vectors.extend((embedding, 0.55) for embedding in (opened_embeddings or []))
+    return weighted_average_vectors(weighted_vectors)
 
 
 def recency_score(published_at: datetime, now: datetime) -> float:
@@ -146,18 +173,24 @@ def recency_score(published_at: datetime, now: datetime) -> float:
     return max(0.0, 1 - min(age_hours / 72.0, 1.0))
 
 
-def similarity_to_saved(paper_vector: list[float], saved_embeddings: list[list[float]]) -> float:
-    if not saved_embeddings:
+def similarity_to_interactions(paper_vector: list[float], embeddings: list[list[float]]) -> float:
+    if not embeddings:
         return 0.0
 
-    return max(cosine_similarity(paper_vector, embedding) for embedding in saved_embeddings)
+    return max(cosine_similarity(paper_vector, embedding) for embedding in embeddings)
 
 
-def penalty_from_dismissed(paper_vector: list[float], dismissed_embeddings: list[list[float]]) -> float:
-    if not dismissed_embeddings:
+def _topic_affinity(selected_topics: list[str], paper_topics: list[dict[str, Any]]) -> float:
+    if not selected_topics:
         return 0.0
 
-    return max(cosine_similarity(paper_vector, embedding) for embedding in dismissed_embeddings)
+    topic_scores = {
+        topic["slug"]: float(topic["confidence"])
+        for topic in paper_topics
+        if not topic["is_hidden"]
+    }
+    overlapping = [topic_scores[slug] for slug in selected_topics if slug in topic_scores]
+    return max(overlapping, default=0.0)
 
 
 def generate_reasons(feature_scores: dict[str, float], paper: dict[str, Any], selected_topics: list[str]) -> list[dict]:
@@ -172,7 +205,7 @@ def generate_reasons(feature_scores: dict[str, float], paper: dict[str, Any], se
             }
         )
 
-    if feature_scores["saved_similarity"] > 0.1:
+    if feature_scores["saved_similarity"] > 0.15:
         reasons.append(
             {
                 "type": "saved_similarity",
@@ -181,14 +214,11 @@ def generate_reasons(feature_scores: dict[str, float], paper: dict[str, Any], se
             }
         )
 
-    if feature_scores["author"] > 0:
-        author_label = "author you follow"
-        if paper["author_matches"]:
-            author_label = f"author you follow: {paper['author_matches'][0]['followed']}"
+    if feature_scores["author"] > 0 and paper["author_matches"]:
         reasons.append(
             {
                 "type": "author",
-                "label": author_label,
+                "label": f"author you follow: {paper['author_matches'][0]['followed']}",
                 "score": round(feature_scores["author"], 3),
             }
         )
@@ -202,7 +232,7 @@ def generate_reasons(feature_scores: dict[str, float], paper: dict[str, Any], se
             }
         )
 
-    if feature_scores["recency"] > 0.05 and len(reasons) < 3:
+    if feature_scores["recency"] > 0.1 and len(reasons) < 3:
         reasons.append(
             {
                 "type": "freshness",
@@ -211,10 +241,80 @@ def generate_reasons(feature_scores: dict[str, float], paper: dict[str, Any], se
             }
         )
 
-    if not reasons and selected_topics:
+    if not reasons and selected_topics and paper["cluster_label"] != "misc":
         reasons.append({"type": "cluster", "label": f"grouped under {paper['cluster_label']}", "score": 0.05})
 
     return reasons[:3]
+
+
+def _score_paper(
+    paper: dict[str, Any],
+    *,
+    selected_topics: list[str],
+    followed_authors: list[str],
+    preferred_categories: list[str],
+    profile_vector: list[float],
+    saved_embeddings: list[list[float]],
+    opened_embeddings: list[list[float]],
+    dismissed_embeddings: list[list[float]],
+    now: datetime,
+) -> dict[str, Any]:
+    paper_vector = paper["embedding"]
+    visible_topics = [topic["slug"] for topic in paper["topics"] if not topic["is_hidden"]]
+    author_matches = match_followed_authors(followed_authors, paper["authors"])
+    category_overlap = set(preferred_categories).intersection(paper["categories"]) if preferred_categories else set()
+
+    paper["visible_topics"] = visible_topics
+    paper["author_matches"] = author_matches
+
+    feature_scores = {
+        "semantic": cosine_similarity(profile_vector, paper_vector),
+        "topic": _topic_affinity(selected_topics, paper["topics"]),
+        "category": 1.0 if category_overlap else 0.0,
+        "author": author_matches[0]["score"] if author_matches else 0.0,
+        "recency": recency_score(paper["published_at"], now),
+        "saved_similarity": similarity_to_interactions(paper_vector, saved_embeddings),
+        "open_similarity": similarity_to_interactions(paper_vector, opened_embeddings),
+        "dismiss_penalty": similarity_to_interactions(paper_vector, dismissed_embeddings),
+    }
+
+    base_score = sum(feature_scores[name] * weight for name, weight in BASE_WEIGHTS.items())
+    paper["base_score"] = round(base_score, 4)
+    paper["score"] = round(base_score, 4)
+    paper["reasons"] = generate_reasons(feature_scores, paper, selected_topics)
+    return paper
+
+
+def _rerank_with_diversity(papers: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    ordered = sorted(papers, key=lambda item: item["base_score"], reverse=True)
+    head = ordered[:DIVERSITY_RERANK_LIMIT]
+    tail = ordered[DIVERSITY_RERANK_LIMIT:]
+    selected: list[dict[str, Any]] = []
+    surfaced_clusters: dict[str, int] = defaultdict(int)
+
+    while head:
+        best_index = 0
+        best_score = -10.0
+        for index, candidate in enumerate(head):
+            penalty = 0.0
+            if candidate["cluster_id"] != "misc":
+                penalty = surfaced_clusters[candidate["cluster_id"]] * DIVERSITY_REPEAT_PENALTY
+
+            rerank_score = candidate["base_score"] - penalty
+            if rerank_score > best_score:
+                best_index = index
+                best_score = rerank_score
+
+        paper = head.pop(best_index)
+        paper["score"] = round(best_score, 4)
+        if paper["cluster_id"] != "misc":
+            surfaced_clusters[paper["cluster_id"]] += 1
+        selected.append(paper)
+
+    for paper in tail:
+        paper["score"] = round(paper["base_score"], 4)
+
+    return selected + tail
 
 
 def rank_papers_for_user(
@@ -224,38 +324,38 @@ def rank_papers_for_user(
     preferred_categories: list[str],
     saved_embeddings: list[list[float]],
     dismissed_embeddings: list[list[float]],
+    opened_embeddings: list[list[float]] | None = None,
 ) -> list[dict[str, Any]]:
     now = datetime.now(timezone.utc)
-    profile_vector = build_user_profile_vector(selected_topics, followed_authors, saved_embeddings)
-    surfaced_clusters: dict[str, int] = defaultdict(int)
-    ranked: list[dict[str, Any]] = []
+    profile_vector = build_user_profile_vector(
+        selected_topics,
+        followed_authors,
+        saved_embeddings,
+        opened_embeddings=opened_embeddings or [],
+    )
 
-    for paper in papers:
-        paper_vector = paper["embedding"]
-        visible_topics = [topic["slug"] for topic in paper["topics"] if not topic["is_hidden"]]
-        paper["visible_topics"] = visible_topics
-        author_matches = match_followed_authors(followed_authors, paper["authors"])
-        paper["author_matches"] = author_matches
+    scored = [
+        _score_paper(
+            paper,
+            selected_topics=selected_topics,
+            followed_authors=followed_authors,
+            preferred_categories=preferred_categories,
+            profile_vector=profile_vector,
+            saved_embeddings=saved_embeddings,
+            opened_embeddings=opened_embeddings or [],
+            dismissed_embeddings=dismissed_embeddings,
+            now=now,
+        )
+        for paper in papers
+    ]
+    active = [paper for paper in scored if not paper["isDismissed"]]
+    dismissed = sorted(
+        [paper for paper in scored if paper["isDismissed"]],
+        key=lambda item: item["base_score"],
+        reverse=True,
+    )
 
-        feature_scores = {
-            "semantic": cosine_similarity(profile_vector, paper_vector),
-            "topic": 1.0 if set(selected_topics).intersection(visible_topics) else 0.0,
-            "category": 1.0 if paper["primary_category"] in preferred_categories else 0.0,
-            "author": author_matches[0]["score"] if author_matches else 0.0,
-            "recency": recency_score(paper["published_at"], now),
-            "saved_similarity": similarity_to_saved(paper_vector, saved_embeddings),
-            "dismiss_penalty": penalty_from_dismissed(paper_vector, dismissed_embeddings),
-            "diversity_penalty": float(surfaced_clusters[paper["cluster_id"]] > 0),
-        }
-
-        score = sum(feature_scores[name] * weight for name, weight in WEIGHTS.items())
-        paper["score"] = round(score, 4)
-        paper["reasons"] = generate_reasons(feature_scores, paper, selected_topics)
-        ranked.append(paper)
-        surfaced_clusters[paper["cluster_id"]] += 1
-
-    ranked.sort(key=lambda item: item["score"], reverse=True)
-    return ranked
+    return _rerank_with_diversity(active) + dismissed
 
 
 def parse_vector(raw_value: Any) -> list[float]:
@@ -270,6 +370,24 @@ def parse_vector(raw_value: Any) -> list[float]:
         return [0.0] * 384
 
     return [float(part) for part in text.split(",")]
+
+
+def _latest_available_digest_date(connection, requested_date: date) -> date | None:
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            select ingest_date
+            from papers
+            where ingest_date <= %s
+            group by ingest_date
+            order by ingest_date desc
+            limit 1
+            """,
+            (requested_date,),
+        )
+        row = cursor.fetchone()
+
+    return row["ingest_date"] if row else None
 
 
 def _paper_rows_for_date(connection, digest_date: date) -> list[dict[str, Any]]:
@@ -403,10 +521,18 @@ def _interaction_embeddings(connection, user_id: str, interaction_type: str) -> 
         )
         rows = cursor.fetchall()
 
-    return ({row["paper_id"] for row in rows}, [parse_vector(row["embedding"]) for row in rows if row["embedding"] is not None])
+    return (
+        {row["paper_id"] for row in rows},
+        [parse_vector(row["embedding"]) for row in rows if row["embedding"] is not None],
+    )
 
 
-def _paper_to_payload(row: dict[str, Any], topics: list[dict[str, Any]], saved_ids: set[str], dismissed_ids: set[str]) -> dict[str, Any]:
+def _paper_to_payload(
+    row: dict[str, Any],
+    topics: list[dict[str, Any]],
+    saved_ids: set[str],
+    dismissed_ids: set[str],
+) -> dict[str, Any]:
     return {
         "id": row["id"],
         "sourceId": row["source_id"],
@@ -467,40 +593,117 @@ def _serialize_paper(paper: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def build_digest_response(connection, user_id: str, digest_date: date) -> dict[str, Any]:
-    paper_rows = _paper_rows_for_date(connection, digest_date)
-    paper_ids = [row["id"] for row in paper_rows]
-    topics_by_paper = _topics_for_papers(connection, paper_ids)
-    preferences = _user_preferences(connection, user_id)
-    saved_ids, saved_embeddings = _interaction_embeddings(connection, user_id, "save")
-    dismissed_ids, dismissed_embeddings = _interaction_embeddings(connection, user_id, "dismiss")
-
-    papers = []
-    for row in paper_rows:
-        papers.append(_paper_to_payload(row, topics_by_paper.get(row["id"], []), saved_ids, dismissed_ids))
-
-    ranked = rank_papers_for_user(
+def _rank_digest_pool(
+    papers: list[dict[str, Any]],
+    *,
+    preferences: dict[str, Any],
+    saved_embeddings: list[list[float]],
+    opened_embeddings: list[list[float]],
+    dismissed_embeddings: list[list[float]],
+) -> list[dict[str, Any]]:
+    return rank_papers_for_user(
         papers,
         selected_topics=preferences["topics"],
         followed_authors=preferences["authors"],
         preferred_categories=preferences["categories"],
         saved_embeddings=saved_embeddings,
         dismissed_embeddings=dismissed_embeddings,
+        opened_embeddings=opened_embeddings,
     )
 
-    response_papers = [_serialize_paper(paper) for paper in ranked if not paper["isDismissed"]]
 
-    return {"date": digest_date.isoformat(), "papers": response_papers}
+def _visible_ranked_papers(ranked: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [paper for paper in ranked if not paper["isDismissed"]]
+
+
+def build_digest_response(connection, user_id: str, digest_date: date) -> dict[str, Any]:
+    resolved_date = _latest_available_digest_date(connection, digest_date)
+    if resolved_date is None:
+        return {
+            "requestedDate": digest_date.isoformat(),
+            "resolvedDate": digest_date.isoformat(),
+            "isFallback": False,
+            "didBackfillCategories": False,
+            "papers": [],
+        }
+
+    paper_rows = _paper_rows_for_date(connection, resolved_date)
+    paper_ids = [row["id"] for row in paper_rows]
+    topics_by_paper = _topics_for_papers(connection, paper_ids)
+    preferences = _user_preferences(connection, user_id)
+    saved_ids, saved_embeddings = _interaction_embeddings(connection, user_id, "save")
+    dismissed_ids, dismissed_embeddings = _interaction_embeddings(connection, user_id, "dismiss")
+    _opened_ids, opened_embeddings = _interaction_embeddings(connection, user_id, "open")
+
+    papers = [
+        _paper_to_payload(row, topics_by_paper.get(row["id"], []), saved_ids, dismissed_ids)
+        for row in paper_rows
+    ]
+    preferred_categories = set(preferences["categories"])
+    matching = (
+        [paper for paper in papers if preferred_categories.intersection(paper["categories"])]
+        if preferred_categories
+        else papers
+    )
+
+    did_backfill_categories = False
+    if not preferred_categories:
+        ranked = _visible_ranked_papers(
+            _rank_digest_pool(
+                papers,
+                preferences=preferences,
+                saved_embeddings=saved_embeddings,
+                opened_embeddings=opened_embeddings,
+                dismissed_embeddings=dismissed_embeddings,
+            )
+        )
+    else:
+        ranked_matching = _visible_ranked_papers(
+            _rank_digest_pool(
+                matching,
+                preferences=preferences,
+                saved_embeddings=saved_embeddings,
+                opened_embeddings=opened_embeddings,
+                dismissed_embeddings=dismissed_embeddings,
+            )
+        )
+        if len(ranked_matching) >= MIN_CATEGORY_FEED_SIZE:
+            ranked = ranked_matching
+        else:
+            did_backfill_categories = True
+            matching_ids = {paper["id"] for paper in matching}
+            backfill_candidates = [paper for paper in papers if paper["id"] not in matching_ids]
+            ranked_backfill = _visible_ranked_papers(
+                _rank_digest_pool(
+                    backfill_candidates,
+                    preferences=preferences,
+                    saved_embeddings=saved_embeddings,
+                    opened_embeddings=opened_embeddings,
+                    dismissed_embeddings=dismissed_embeddings,
+                )
+            )
+            needed = max(MIN_CATEGORY_FEED_SIZE - len(ranked_matching), 0)
+            ranked = ranked_matching + ranked_backfill[:needed]
+
+    response_papers = [_serialize_paper(paper) for paper in ranked]
+    return {
+        "requestedDate": digest_date.isoformat(),
+        "resolvedDate": resolved_date.isoformat(),
+        "isFallback": resolved_date != digest_date,
+        "didBackfillCategories": did_backfill_categories,
+        "papers": response_papers,
+    }
 
 
 def build_paper_response(connection, user_id: str, paper_id: str) -> dict[str, Any]:
     row = _paper_row_by_id(connection, paper_id)
     if row is None:
-        return {"paper": None, "summary": None}
+        return {"paper": None, "summary": None, "summarySource": None}
 
     preferences = _user_preferences(connection, user_id)
     saved_ids, saved_embeddings = _interaction_embeddings(connection, user_id, "save")
     dismissed_ids, dismissed_embeddings = _interaction_embeddings(connection, user_id, "dismiss")
+    _opened_ids, opened_embeddings = _interaction_embeddings(connection, user_id, "open")
     topics_by_paper = _topics_for_papers(connection, [paper_id])
     selected = _paper_to_payload(row, topics_by_paper.get(paper_id, []), saved_ids, dismissed_ids)
 
@@ -511,7 +714,12 @@ def build_paper_response(connection, user_id: str, paper_id: str) -> dict[str, A
         preferred_categories=preferences["categories"],
         saved_embeddings=saved_embeddings,
         dismissed_embeddings=dismissed_embeddings,
+        opened_embeddings=opened_embeddings,
     )[0]
 
-    summary = get_or_create_summary(connection, paper_id, ranked["title"], ranked["abstract"])
-    return {"paper": _serialize_paper(ranked), "summary": summary}
+    summary, summary_source = get_or_create_summary(connection, paper_id, ranked["title"], ranked["abstract"])
+    return {
+        "paper": _serialize_paper(ranked),
+        "summary": summary,
+        "summarySource": summary_source,
+    }

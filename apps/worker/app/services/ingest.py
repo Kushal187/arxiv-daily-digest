@@ -179,7 +179,7 @@ def run_daily_ingest(run_date: date | None = None, force: bool = False) -> dict[
             enriched = []
             for paper in papers:
                 embedding = embed_text(f"{paper['title']}\n\n{paper['abstract']}")
-                topics = infer_topics(paper["title"], paper["abstract"], paper["categories"])
+                topics = infer_topics(paper["title"], paper["abstract"], paper["categories"], embedding=embedding)
                 paper["embedding"] = embedding
                 paper["topics"] = topics
                 paper["classifier_metadata"] = {

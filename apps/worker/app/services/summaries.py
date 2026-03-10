@@ -9,6 +9,9 @@ from urllib.request import Request, urlopen
 from ..config import settings
 
 
+SummarySource = str
+
+
 def default_bedrock_base_url(region: str) -> str:
     return f"https://bedrock-mantle.{region}.api.aws/v1"
 
@@ -85,27 +88,27 @@ def generate_bedrock_summary(title: str, abstract: str) -> str:
     return content
 
 
-def get_or_create_summary(connection, paper_id: str, title: str, abstract: str) -> str:
+def get_or_create_summary(connection, paper_id: str, title: str, abstract: str) -> tuple[str, SummarySource]:
     with connection.cursor() as cursor:
         cursor.execute(
-            "select content from paper_summaries where paper_id = %s limit 1",
+            "select provider, content from paper_summaries where paper_id = %s limit 1",
             (paper_id,),
         )
         row = cursor.fetchone()
 
     if row:
-        return row["content"]
+        return row["content"], "llm" if row.get("provider") else "extractive"
 
     if not settings.enable_paper_explain:
-        return build_extractive_summary(abstract)
+        return build_extractive_summary(abstract), "extractive"
 
     if not can_call_bedrock():
-        return build_extractive_summary(abstract)
+        return build_extractive_summary(abstract), "extractive"
 
     try:
         summary = generate_bedrock_summary(title, abstract)
     except RuntimeError:
-        return build_extractive_summary(abstract)
+        return build_extractive_summary(abstract), "extractive"
 
     with connection.cursor() as cursor:
         cursor.execute(
@@ -122,4 +125,4 @@ def get_or_create_summary(connection, paper_id: str, title: str, abstract: str) 
             (paper_id, settings.summary_provider, settings.summary_model, summary),
         )
     connection.commit()
-    return summary
+    return summary, "llm"

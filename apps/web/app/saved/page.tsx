@@ -1,5 +1,5 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
+import { SavedQueue } from "../../components/saved-queue";
 import { auth } from "../../lib/auth";
 import { getSavedPapers } from "../../lib/queries";
 
@@ -17,35 +17,17 @@ export default async function SavedPage() {
       <section className="page-header">
         <p className="eyebrow">saved</p>
         <h1>Your reading queue</h1>
+        <p className="page-description">Sort by when you saved papers or when they were published.</p>
       </section>
-      <section className="feed-list">
-        {saved.length ? (
-          <>
-            {saved.map((paper) => (
-              <article key={paper.id} className="paper-row">
-                <h2 className="paper-title">
-                  <Link href={`/papers/${paper.id}`}>{paper.title}</Link>
-                </h2>
-                <p className="paper-meta">
-                  {paper.authors.join(", ")} · {new Date(paper.published_at).toLocaleDateString()}
-                </p>
-                <p className="paper-abstract expanded">{paper.abstract}</p>
-                <div className="metadata-row">
-                  {paper.categories.map((category) => (
-                    <span key={category} className="metadata-tag">
-                      {category.toLowerCase()}
-                    </span>
-                  ))}
-                </div>
-              </article>
-            ))}
-          </>
-        ) : (
+      {saved.length ? (
+        <SavedQueue papers={saved} />
+      ) : (
+        <section className="feed-list">
           <div className="empty-state">
             <p>You have not saved any papers yet.</p>
           </div>
-        )}
-      </section>
+        </section>
+      )}
     </main>
   );
 }

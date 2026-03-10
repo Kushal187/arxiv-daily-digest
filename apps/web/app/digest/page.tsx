@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
-import { DigestCard } from "../../components/digest-card";
+import { DigestFeed } from "../../components/digest-feed";
+import { DigestHeader } from "../../components/digest-header";
 import { auth } from "../../lib/auth";
 import { getUserPreferences } from "../../lib/queries";
 import { fetchDigest } from "../../lib/worker";
@@ -24,24 +25,21 @@ export default async function DigestPage() {
 
   return (
     <main className="page">
-      <section className="page-header">
-        <p className="eyebrow">daily digest</p>
-        <h1>{new Date(digest.date).toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })}</h1>
-        <p className="page-description">
-          Ranked against selected topics, followed authors, category preferences, saved papers, and
-          dismissals.
-        </p>
-      </section>
+      <DigestHeader
+        requestedDate={digest.requestedDate}
+        resolvedDate={digest.resolvedDate}
+        isFallback={digest.isFallback}
+      />
 
-      <section className="feed-list">
-        {digest.papers.length ? (
-          digest.papers.map((paper) => <DigestCard key={paper.id} paper={paper} />)
-        ) : (
+      {digest.papers.length ? (
+        <DigestFeed digest={digest} />
+      ) : (
+        <section className="feed-list">
           <div className="empty-state">
             <p>No papers are available for this day yet. Run the ingest job or widen the category set.</p>
           </div>
-        )}
-      </section>
+        </section>
+      )}
     </main>
   );
 }

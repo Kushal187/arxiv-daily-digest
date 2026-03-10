@@ -156,12 +156,13 @@ export async function replacePreferences(userId: string, payload: PreferencesPay
 }
 
 export async function recordInteraction(userId: string, paperId: string, action: string) {
-  if (action === "unsave") {
+  if (action === "unsave" || action === "undismiss") {
+    const interactionType = action === "unsave" ? "save" : "dismiss";
     await sql`
       delete from user_interactions
       where user_id = ${userId}
         and paper_id = ${paperId}
-        and interaction_type = 'save'
+        and interaction_type = ${interactionType}
     `;
 
     return;
@@ -185,7 +186,9 @@ export async function getSavedPapers(userId: string) {
     primary_category: string;
     published_at: string;
     updated_at: string;
+    saved_at: string;
     url: string;
+    visible_topics: { slug: string; confidence: number }[];
   }[]>`
     select
       p.id,
@@ -197,7 +200,20 @@ export async function getSavedPapers(userId: string) {
       p.primary_category,
       p.published_at::text,
       p.updated_at::text,
-      p.url
+      ui.created_at::text as saved_at,
+      p.url,
+      coalesce(
+        (
+          select json_agg(
+            json_build_object('slug', pt.topic_slug, 'confidence', pt.confidence)
+            order by pt.confidence desc
+          )
+          from paper_topics pt
+          where pt.paper_id = p.id
+            and pt.is_hidden = false
+        ),
+        '[]'::json
+      ) as visible_topics
     from user_interactions ui
     join papers p on p.id = ui.paper_id
     where ui.user_id = ${userId}

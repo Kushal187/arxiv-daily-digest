@@ -1,32 +1,57 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
-import type { DigestPaper } from "@arxiv-digest/shared";
+import { useMemo, useState } from "react";
+import { TOPIC_TAXONOMY, type DigestPaper } from "@arxiv-digest/shared";
+import { formatTimestampDate } from "../lib/dates";
 import { PaperActions } from "./paper-actions";
 
-export function DigestCard({ paper }: { paper: DigestPaper }) {
-  const [hidden, setHidden] = useState(false);
-  const [expanded, setExpanded] = useState(false);
+const TOPIC_LABELS = new Map(TOPIC_TAXONOMY.map((topic) => [topic.slug, topic.label]));
 
-  if (hidden || paper.isDismissed) {
-    return null;
+export function DigestCard({ paper }: { paper: DigestPaper }) {
+  const [expanded, setExpanded] = useState(false);
+  const [dismissed, setDismissed] = useState(paper.isDismissed);
+  const visibleTopics = useMemo(
+    () => paper.topics.filter((topic) => !topic.isHidden).map((topic) => TOPIC_LABELS.get(topic.slug) ?? topic.slug),
+    [paper.topics]
+  );
+  const primaryReason = paper.reasons[0];
+  const secondaryReasons = paper.reasons.slice(1);
+
+  if (dismissed) {
+    return (
+      <article className="paper-row dismissed-row">
+        <p className="section-note">Dismissed from this digest.</p>
+        <PaperActions
+          paperId={paper.id}
+          paperUrl={paper.url}
+          initialSaved={paper.isSaved}
+          initialDismissed
+          onDismissedChange={setDismissed}
+        />
+      </article>
+    );
   }
 
   return (
     <article className="paper-row">
       <div className="paper-row-header">
-        <span className="score-badge">{paper.score.toFixed(2)}</span>
-        <span className="meta-inline">{paper.clusterLabel}</span>
+        {primaryReason ? <span className="reason-pill">{primaryReason.label}</span> : null}
+        {paper.clusterLabel !== "misc" ? <span className="meta-inline">{paper.clusterLabel}</span> : null}
       </div>
       <h2 className="paper-title">
         <Link href={`/papers/${paper.id}`}>{paper.title}</Link>
       </h2>
       <p className="paper-meta">
-        {paper.authors.join(", ")} · {new Date(paper.publishedAt).toLocaleDateString()}
+        {paper.authors.join(", ")} · {formatTimestampDate(paper.publishedAt)}
       </p>
       <p className={expanded ? "paper-abstract expanded" : "paper-abstract"}>{paper.abstract}</p>
-      <button className="inline-toggle" onClick={() => setExpanded((current) => !current)}>
+      <button
+        type="button"
+        className="inline-toggle"
+        aria-expanded={expanded}
+        onClick={() => setExpanded((current) => !current)}
+      >
         {expanded ? "collapse abstract" : "expand abstract"}
       </button>
       <div className="metadata-row">
@@ -35,25 +60,21 @@ export function DigestCard({ paper }: { paper: DigestPaper }) {
             {category.toLowerCase()}
           </span>
         ))}
-        {paper.topics
-          .filter((topic) => !topic.isHidden)
-          .map((topic) => (
-            <span key={topic.slug} className="metadata-tag">
-              {topic.slug}
-            </span>
-          ))}
+        {visibleTopics.map((topic) => (
+          <span key={topic} className="metadata-tag">
+            {topic}
+          </span>
+        ))}
       </div>
-      {paper.reasons.length ? (
-        <p className="reason-line">
-          {paper.reasons.map((reason) => reason.label).join(" · ")}
-        </p>
+      {secondaryReasons.length ? (
+        <p className="reason-line">{secondaryReasons.map((reason) => reason.label).join(" · ")}</p>
       ) : null}
       <PaperActions
         paperId={paper.id}
         paperUrl={paper.url}
         initialSaved={paper.isSaved}
         initialDismissed={paper.isDismissed}
-        onDismissed={() => setHidden(true)}
+        onDismissedChange={setDismissed}
       />
     </article>
   );

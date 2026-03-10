@@ -1,94 +1,246 @@
 from __future__ import annotations
 
-from collections import Counter
+from functools import lru_cache
 from typing import Any
+
+from .embeddings import embed_text
 
 
 TOPIC_DEFINITIONS = [
     {
         "slug": "retrieval-rag",
-        "keywords": ["rag", "retrieval augmented", "dense retrieval", "reranker", "retriever", "vector database"],
-        "categories": {"cs.IR": 0.22, "cs.CL": 0.1, "cs.AI": 0.1},
+        "prototype": "retrieval augmented generation dense retrieval reranking indexing search systems",
+        "keywords": {
+            "rag": 1.0,
+            "retrieval augmented": 1.0,
+            "dense retrieval": 0.9,
+            "reranker": 0.85,
+            "reranking": 0.85,
+            "retriever": 0.8,
+            "indexing": 0.5,
+            "vector database": 0.75,
+        },
+        "categories": {"cs.IR": 0.24, "cs.CL": 0.1, "cs.AI": 0.1},
     },
     {
         "slug": "llm-evaluation",
-        "keywords": ["benchmark", "evaluation", "judge model", "eval", "robustness", "leaderboard"],
+        "prototype": "llm evaluation benchmarks judge models robustness leaderboard analysis",
+        "keywords": {
+            "benchmark": 0.8,
+            "evaluation": 0.9,
+            "judge model": 1.0,
+            "eval": 0.7,
+            "robustness": 0.75,
+            "leaderboard": 0.85,
+        },
         "categories": {"cs.CL": 0.18, "cs.AI": 0.12},
     },
     {
         "slug": "agent-systems",
-        "keywords": ["agent", "tool use", "planning agent", "multi-agent", "autonomous workflow"],
+        "prototype": "agent systems tool use autonomous workflows multi agent task execution",
+        "keywords": {
+            "agent": 0.75,
+            "tool use": 0.95,
+            "planning agent": 0.9,
+            "agent planning": 0.9,
+            "multi-agent": 0.95,
+            "autonomous workflow": 0.95,
+        },
         "categories": {"cs.AI": 0.22, "cs.CL": 0.08},
     },
     {
         "slug": "multimodal-vlm",
-        "keywords": ["vision-language", "multimodal", "image-text", "vlm", "video-language"],
+        "prototype": "multimodal vision language models image text reasoning video language",
+        "keywords": {
+            "vision-language": 1.0,
+            "multimodal": 0.85,
+            "image-text": 0.85,
+            "vlm": 0.95,
+            "video-language": 0.95,
+        },
         "categories": {"cs.CV": 0.2, "cs.CL": 0.14},
     },
     {
         "slug": "diffusion-generative",
-        "keywords": ["diffusion", "score matching", "generative model", "image synthesis"],
+        "prototype": "diffusion generative modeling score matching image synthesis generation",
+        "keywords": {
+            "diffusion": 1.0,
+            "score matching": 0.95,
+            "generative model": 0.85,
+            "image synthesis": 0.9,
+        },
         "categories": {"cs.CV": 0.16, "cs.LG": 0.12},
     },
     {
         "slug": "graph-learning",
-        "keywords": ["graph neural", "gnn", "graph learning", "heterogeneous graph", "graph transformer"],
+        "prototype": "graph learning graph neural networks graph transformers structured reasoning",
+        "keywords": {
+            "graph neural": 1.0,
+            "gnn": 0.8,
+            "graph learning": 0.95,
+            "heterogeneous graph": 0.85,
+            "graph transformer": 0.95,
+        },
         "categories": {"cs.LG": 0.18},
     },
     {
         "slug": "medical-imaging",
-        "keywords": ["medical imaging", "radiology", "mri", "ct", "ultrasound", "pathology"],
+        "prototype": "medical imaging radiology pathology clinical vision diagnosis support",
+        "keywords": {
+            "medical imaging": 1.0,
+            "radiology": 0.9,
+            "mri": 0.75,
+            "ct": 0.65,
+            "ultrasound": 0.7,
+            "pathology": 0.75,
+        },
         "categories": {"cs.CV": 0.14},
     },
     {
         "slug": "reinforcement-learning",
-        "keywords": ["reinforcement learning", "policy optimization", "offline rl", "actor-critic"],
+        "prototype": "reinforcement learning policy optimization actor critic offline rl decision making",
+        "keywords": {
+            "reinforcement learning": 1.0,
+            "policy optimization": 0.85,
+            "offline rl": 0.95,
+            "actor-critic": 0.9,
+        },
         "categories": {"cs.LG": 0.22, "cs.AI": 0.08},
     },
     {
         "slug": "robotics",
-        "keywords": ["robot", "manipulation", "locomotion", "embodied", "grasping"],
+        "prototype": "robotics embodied control manipulation locomotion robot learning planning",
+        "keywords": {
+            "robot": 0.7,
+            "manipulation": 0.85,
+            "locomotion": 0.85,
+            "embodied": 0.8,
+            "grasping": 0.85,
+        },
         "categories": {"cs.RO": 0.24, "cs.AI": 0.08},
     },
     {
         "slug": "speech-audio",
-        "keywords": ["speech", "audio", "asr", "tts", "speaker"],
+        "prototype": "speech audio recognition generation speech language modeling asr tts",
+        "keywords": {
+            "speech": 0.7,
+            "audio": 0.7,
+            "asr": 0.95,
+            "tts": 0.95,
+            "speaker": 0.55,
+        },
         "categories": {"eess.AS": 0.24, "cs.CL": 0.08},
     },
     {
         "slug": "information-retrieval",
-        "keywords": ["search ranking", "retrieval", "ranking model", "ad hoc retrieval", "web search"],
+        "prototype": "information retrieval search ranking ad hoc retrieval web search relevance",
+        "keywords": {
+            "search ranking": 1.0,
+            "retrieval": 0.7,
+            "ranking model": 0.85,
+            "ad hoc retrieval": 1.0,
+            "web search": 0.9,
+        },
         "categories": {"cs.IR": 0.28},
     },
     {
         "slug": "reasoning-planning",
-        "keywords": ["reasoning", "planning", "tree search", "decomposition", "chain of thought"],
+        "prototype": "reasoning planning tree search decomposition long horizon decision making",
+        "keywords": {
+            "reasoning": 0.8,
+            "planning": 0.8,
+            "tree search": 0.95,
+            "decomposition": 0.7,
+            "chain of thought": 0.95,
+        },
         "categories": {"cs.AI": 0.18, "cs.CL": 0.12},
     },
     {
         "slug": "training-efficiency",
-        "keywords": ["quantization", "distillation", "lora", "parameter-efficient", "inference optimization"],
+        "prototype": "training efficiency quantization distillation efficient finetuning inference optimization",
+        "keywords": {
+            "quantization": 1.0,
+            "distillation": 0.85,
+            "lora": 0.9,
+            "parameter-efficient": 0.95,
+            "inference optimization": 0.9,
+        },
         "categories": {"cs.LG": 0.18, "cs.CL": 0.08},
     },
     {
         "slug": "safety-alignment",
-        "keywords": ["alignment", "red team", "jailbreak", "safety", "reward modeling"],
+        "prototype": "safety alignment reward modeling red teaming safeguards misuse prevention",
+        "keywords": {
+            "alignment": 0.85,
+            "red team": 0.85,
+            "jailbreak": 0.9,
+            "safety": 0.8,
+            "reward modeling": 0.95,
+        },
         "categories": {"cs.AI": 0.16, "cs.CL": 0.08},
     },
 ]
 
-HIDE_THRESHOLD = 0.34
+HIDE_THRESHOLD = 0.45
 
 
-def infer_topics(title: str, abstract: str, categories: list[str]) -> list[dict[str, Any]]:
+def cosine_similarity(left: list[float], right: list[float]) -> float:
+    if not left or not right:
+        return 0.0
+
+    numerator = sum(a * b for a, b in zip(left, right))
+    left_norm = sum(value * value for value in left) ** 0.5 or 1.0
+    right_norm = sum(value * value for value in right) ** 0.5 or 1.0
+    return numerator / (left_norm * right_norm)
+
+
+def _normalize_similarity(value: float) -> float:
+    return max(0.0, min((value + 1.0) / 2.0, 1.0))
+
+
+def _keyword_score(text: str, keywords: dict[str, float]) -> float:
+    total = 0.0
+    for phrase, weight in keywords.items():
+        if phrase in text:
+            total += weight
+
+    return min(total / 2.2, 1.0)
+
+
+def _category_score(categories: list[str], priors: dict[str, float]) -> float:
+    total = sum(priors.get(category, 0.0) for category in categories)
+    return min(total / 0.32, 1.0)
+
+
+@lru_cache(maxsize=None)
+def _topic_prototype(slug: str) -> list[float]:
+    for definition in TOPIC_DEFINITIONS:
+        if definition["slug"] == slug:
+            return embed_text(definition["prototype"])
+
+    return [0.0] * 384
+
+
+def infer_topics(
+    title: str,
+    abstract: str,
+    categories: list[str],
+    embedding: list[float] | None = None,
+) -> list[dict[str, Any]]:
     text = f"{title.lower()} {abstract.lower()}"
+    paper_embedding = embedding if embedding is not None else embed_text(f"{title}\n\n{abstract}")
     predictions: list[dict[str, Any]] = []
 
     for definition in TOPIC_DEFINITIONS:
-        keyword_hits = Counter(keyword for keyword in definition["keywords"] if keyword in text)
-        keyword_score = min(sum(keyword_hits.values()) * 0.22, 0.66)
-        category_score = sum(definition["categories"].get(category, 0.0) for category in categories)
-        confidence = round(min(keyword_score + category_score, 0.99), 3)
+        prototype_score = _normalize_similarity(
+            cosine_similarity(paper_embedding, _topic_prototype(definition["slug"]))
+        )
+        keyword_score = _keyword_score(text, definition["keywords"])
+        category_score = _category_score(categories, definition["categories"])
+        confidence = round(
+            min(prototype_score * 0.55 + keyword_score * 0.30 + category_score * 0.15, 0.99),
+            3,
+        )
 
         if confidence <= 0:
             continue
@@ -98,7 +250,7 @@ def infer_topics(title: str, abstract: str, categories: list[str]) -> list[dict[
                 "slug": definition["slug"],
                 "confidence": confidence,
                 "is_hidden": confidence < HIDE_THRESHOLD,
-                "source": "weak-label",
+                "source": "hybrid-label",
             }
         )
 

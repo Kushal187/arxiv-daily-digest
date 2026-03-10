@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "../../lib/auth";
+import { formatTimestampDate } from "../../lib/dates";
 import { getFollowedAuthorsDashboard } from "../../lib/queries";
 
 export default async function AuthorsPage() {
@@ -18,7 +19,7 @@ export default async function AuthorsPage() {
         <p className="eyebrow">authors</p>
         <h1>Followed authors</h1>
         <p className="page-description">
-          Author matching now handles exact names, initials, and small last-name typos.
+          Matching is intentionally strict so followed-author boosts stay trustworthy.
         </p>
       </section>
 
@@ -50,8 +51,7 @@ export default async function AuthorsPage() {
                       <li key={paper.id}>
                         <Link href={`/papers/${paper.id}`}>{paper.title}</Link>
                         <p className="paper-meta">
-                          matched {paper.matchedPaperAuthor} ·{" "}
-                          {new Date(paper.publishedAt).toLocaleDateString()}
+                          matched {paper.matchedPaperAuthor} · {formatTimestampDate(paper.publishedAt)}
                         </p>
                       </li>
                     ))}
@@ -79,7 +79,7 @@ export default async function AuthorsPage() {
                   </h3>
                   <p className="paper-meta">
                     followed {paper.followedAuthor} · matched {paper.matchedPaperAuthor} ·{" "}
-                    {new Date(paper.publishedAt).toLocaleDateString()}
+                    {formatTimestampDate(paper.publishedAt)}
                   </p>
                 </article>
               ))}

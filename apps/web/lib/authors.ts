@@ -66,31 +66,45 @@ function scoreAuthorMatch(followed: string, paperAuthor: string): number {
 
   const followedParts = parts(followed);
   const paperParts = parts(paperAuthor);
-  if (!followedParts.length || !paperParts.length) {
+  if (followedParts.length < 2 || paperParts.length < 2) {
     return 0;
   }
 
+  const followedFirst = followedParts[0] ?? "";
+  const paperFirst = paperParts[0] ?? "";
   const followedLast = followedParts.at(-1) ?? "";
   const paperLast = paperParts.at(-1) ?? "";
-  const followedFirstInitial = followedParts[0]?.[0] ?? "";
-  const paperFirstInitial = paperParts[0]?.[0] ?? "";
-
-  if (!followedLast || !paperLast || !followedFirstInitial || !paperFirstInitial) {
+  if (!followedLast || !paperLast || !followedFirst || !paperFirst) {
     return 0;
   }
 
-  const lastDistance = levenshteinDistance(followedLast, paperLast);
-  if (followedLast === paperLast && followedFirstInitial === paperFirstInitial) {
-    return 0.9;
+  if (followedLast === paperLast) {
+    if (followedFirst === paperFirst) {
+      return 0.92;
+    }
+
+    if (
+      Math.min(followedFirst.length, paperFirst.length) >= 3 &&
+      (followedFirst.startsWith(paperFirst) || paperFirst.startsWith(followedFirst))
+    ) {
+      return 0.88;
+    }
+
+    if (
+      Math.min(followedFirst.length, paperFirst.length) >= 4 &&
+      levenshteinDistance(followedFirst, paperFirst) === 1
+    ) {
+      return 0.84;
+    }
   }
 
   if (
-    followedFirstInitial === paperFirstInitial &&
+    followedFirst === paperFirst &&
     followedLast.length >= 5 &&
     paperLast.length >= 5 &&
-    lastDistance <= 1
+    levenshteinDistance(followedLast, paperLast) === 1
   ) {
-    return 0.78;
+    return 0.8;
   }
 
   return 0;
@@ -112,7 +126,7 @@ export function matchFollowedAuthors(
       }
     }
 
-    if (bestMatch && bestMatch.score > 0) {
+    if (bestMatch && bestMatch.score >= 0.8) {
       matches.push(bestMatch);
     }
   }

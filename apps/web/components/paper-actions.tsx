@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import type { InteractionType } from "@arxiv-digest/shared";
 
 type Props = {
   paperId: string;
@@ -8,10 +9,12 @@ type Props = {
   initialSaved: boolean;
   initialDismissed: boolean;
   compact?: boolean;
-  onDismissed?: () => void;
+  allowDismiss?: boolean;
+  onDismissedChange?: (dismissed: boolean) => void;
+  onSavedChange?: (saved: boolean) => void;
 };
 
-async function sendInteraction(paperId: string, action: string) {
+async function sendInteraction(paperId: string, action: InteractionType) {
   const response = await fetch("/api/interactions", {
     method: "POST",
     headers: {
@@ -31,96 +34,96 @@ export function PaperActions({
   initialSaved,
   initialDismissed,
   compact = false,
-  onDismissed
+  allowDismiss = true,
+  onDismissedChange,
+  onSavedChange
 }: Props) {
   const [saved, setSaved] = useState(initialSaved);
   const [dismissed, setDismissed] = useState(initialDismissed);
-  const [isPending, setIsPending] = useState(false);
+  const [pending, setPending] = useState({ save: false, dismiss: false });
+  const [error, setError] = useState<string | null>(null);
 
   const classes = useMemo(
     () => `paper-actions${compact ? " compact" : ""}`,
     [compact]
   );
 
-  useEffect(() => {
-    if (dismissed && onDismissed) {
-      onDismissed();
+  async function toggleSave() {
+    const nextSaved = !saved;
+    setPending((current) => ({ ...current, save: true }));
+    setError(null);
+    setSaved(nextSaved);
+    onSavedChange?.(nextSaved);
+
+    try {
+      await sendInteraction(paperId, nextSaved ? "save" : "unsave");
+    } catch {
+      setSaved(!nextSaved);
+      onSavedChange?.(!nextSaved);
+      setError("Could not update your reading queue.");
+    } finally {
+      setPending((current) => ({ ...current, save: false }));
     }
-  }, [dismissed, onDismissed]);
+  }
+
+  async function toggleDismiss() {
+    const nextDismissed = !dismissed;
+    setPending((current) => ({ ...current, dismiss: true }));
+    setError(null);
+    setDismissed(nextDismissed);
+    onDismissedChange?.(nextDismissed);
+
+    try {
+      await sendInteraction(paperId, nextDismissed ? "dismiss" : "undismiss");
+    } catch {
+      setDismissed(!nextDismissed);
+      onDismissedChange?.(!nextDismissed);
+      setError("Could not update this digest item.");
+    } finally {
+      setPending((current) => ({ ...current, dismiss: false }));
+    }
+  }
+
+  function handleOpen() {
+    setError(null);
+    void sendInteraction(paperId, "open").catch(() => {
+      // Navigation should still proceed if tracking fails.
+    });
+  }
 
   return (
     <div className={classes}>
-      <button
-        className="action-link"
-        disabled={isPending}
-        onClick={async () => {
-          try {
-            setIsPending(true);
-            const action = saved ? "unsave" : "save";
-            await sendInteraction(paperId, action);
-            setSaved(!saved);
-          } finally {
-            setIsPending(false);
-          }
-        }}
-      >
-        {saved ? "saved" : "save"}
+      <button className="action-link" disabled={pending.save} onClick={toggleSave}>
+        {pending.save ? "saving..." : saved ? "saved" : "save"}
       </button>
-      <button
-        className="action-link"
-        disabled={isPending || dismissed}
-        onClick={async () => {
-          try {
-            setIsPending(true);
-            await sendInteraction(paperId, "dismiss");
-            setDismissed(true);
-          } finally {
-            setIsPending(false);
-          }
-        }}
-      >
-        {dismissed ? "dismissed" : "dismiss"}
-      </button>
+      {allowDismiss ? (
+        <button className="action-link" disabled={pending.dismiss} onClick={toggleDismiss}>
+          {pending.dismiss ? "working..." : dismissed ? "undo dismiss" : "dismiss"}
+        </button>
+      ) : null}
       {paperUrl ? (
         <a
           className="action-link"
           href={paperUrl}
           target="_blank"
           rel="noreferrer"
-          onClick={async (event) => {
-            event.preventDefault();
-            if (isPending) {
-              return;
-            }
-
-            try {
-              setIsPending(true);
-              await sendInteraction(paperId, "open");
-              window.open(paperUrl, "_blank", "noopener,noreferrer");
-            } finally {
-              setIsPending(false);
-            }
-          }}
+          onClick={handleOpen}
         >
           open arxiv
         </a>
       ) : (
         <button
           className="action-link"
-          disabled={isPending}
-          onClick={async () => {
-            try {
-              setIsPending(true);
-              await sendInteraction(paperId, "open");
-              window.location.href = `/papers/${paperId}`;
-            } finally {
-              setIsPending(false);
-            }
+          type="button"
+          onClick={() => {
+            handleOpen();
+            window.location.href = `/papers/${paperId}`;
           }}
         >
           open
         </button>
       )}
+      {error ? <p className="inline-error">{error}</p> : null}
     </div>
   );
 }

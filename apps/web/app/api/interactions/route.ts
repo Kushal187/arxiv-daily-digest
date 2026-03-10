@@ -13,7 +13,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Missing paperId or action" }, { status: 400 });
   }
 
-  if (!["open", "save", "dismiss", "unsave"].includes(payload.action)) {
+  if (!["open", "save", "dismiss", "unsave", "undismiss"].includes(payload.action)) {
     return NextResponse.json({ error: "Unsupported action" }, { status: 400 });
   }
 

@@ -1,15 +1,5 @@
-import type { DigestPaper } from "@arxiv-digest/shared";
+import type { DigestResponse, PaperDetailResponse } from "@arxiv-digest/shared";
 import { env } from "./env";
-
-type WorkerDigestResponse = {
-  date: string;
-  papers: DigestPaper[];
-};
-
-type WorkerPaperResponse = {
-  paper: DigestPaper | null;
-  summary: string | null;
-};
 
 async function callWorker<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${env.workerBaseUrl}${path}`, {
@@ -31,13 +21,13 @@ async function callWorker<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export async function fetchDigest(userId: string, date: string) {
-  return callWorker<WorkerDigestResponse>(
+  return callWorker<DigestResponse>(
     `/internal/recommendations/digest?userId=${encodeURIComponent(userId)}&date=${encodeURIComponent(date)}`
   );
 }
 
 export async function fetchPaper(userId: string, paperId: string) {
-  return callWorker<WorkerPaperResponse>(
+  return callWorker<PaperDetailResponse>(
     `/internal/papers/${encodeURIComponent(paperId)}?userId=${encodeURIComponent(userId)}`
   );
 }

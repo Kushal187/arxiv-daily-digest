@@ -139,7 +139,8 @@ export function OnboardingForm({
             </button>
             <span id="arxiv-category-tooltip" role="tooltip" className="tooltip-bubble">
               arXiv categories are the subject buckets from arXiv itself, such as cs.AI, cs.LG,
-              and cs.CL. They narrow the candidate pool before ranking.
+              and cs.CL. They narrow the candidate pool first, with automatic backfill if the
+              category slice is too small for a useful digest.
             </span>
           </span>
         </div>
