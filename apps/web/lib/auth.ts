@@ -3,7 +3,7 @@ import Google from "next-auth/providers/google";
 import { authCallbacks } from "./auth-callbacks";
 import { env } from "./env";
 
-export const { handlers, auth } = NextAuth({
+export const { handlers, auth, signIn, signOut } = NextAuth({
   secret: env.nextAuthSecret,
   session: {
     strategy: "jwt"

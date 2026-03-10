@@ -87,6 +87,106 @@ input {
   gap: 14px;
   flex-wrap: wrap;
   font-size: 0.88rem;
+  align-items: center;
+}
+
+.sign-in-form {
+  display: contents;
+}
+
+.nav-signin {
+  padding: 6px 14px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink);
+  font-family: "IBM Plex Sans", "DM Sans", "Helvetica Neue", Arial, sans-serif;
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: border-color 150ms ease, background 150ms ease;
+}
+
+.nav-signin:hover {
+  border-color: #c0c0c0;
+  background: var(--surface);
+}
+
+.nav-link-button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-family: "IBM Plex Sans", "DM Sans", "Helvetica Neue", Arial, sans-serif;
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+
+/* Sign-out confirmation dialog */
+
+.signout-dialog {
+  position: fixed;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0;
+  background: var(--bg);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.12);
+  max-width: 340px;
+  width: calc(100% - 40px);
+}
+
+.signout-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.signout-dialog-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 24px 24px 20px;
+}
+
+.signout-dialog-title {
+  margin: 0;
+  font-family: "IBM Plex Sans", "DM Sans", "Helvetica Neue", Arial, sans-serif;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.signout-dialog-text {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
+.signout-dialog-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+  justify-content: flex-end;
+}
+
+.cta-danger {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 18px;
+  border: none;
+  border-radius: 6px;
+  background: #c0392b;
+  color: #fff;
+  font-family: "IBM Plex Sans", "DM Sans", "Helvetica Neue", Arial, sans-serif;
+  font-size: 0.86rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 150ms ease;
+}
+
+.cta-danger:hover {
+  background: #a93226;
+}
+
+.signout-dialog-actions .cta-secondary {
+  padding: 8px 18px;
 }
 
 .page,
@@ -594,6 +694,166 @@ h3.paper-title {
   padding-top: 10px;
 }
 
+/* ---- Landing page ---- */
+
+.landing {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding-top: 48px;
+}
+
+.hero {
+  max-width: 600px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+}
+
+.hero-eyebrow {
+  color: var(--accent);
+  font-family: "IBM Plex Sans", "DM Sans", "Helvetica Neue", Arial, sans-serif;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  margin: 0;
+  padding: 5px 14px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+}
+
+.hero-title {
+  margin: 0;
+  font-size: clamp(2rem, 5vw, 2.8rem);
+  line-height: 1.12;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+}
+
+.hero-subtitle {
+  margin: 0;
+  color: var(--muted);
+  font-size: 1.05rem;
+  line-height: 1.65;
+  max-width: 520px;
+}
+
+.hero-cta {
+  display: flex;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.cta-primary {
+  display: inline-flex;
+  align-items: center;
+  padding: 10px 22px;
+  border: none;
+  border-radius: 6px;
+  background: var(--ink);
+  color: var(--bg);
+  font-family: "IBM Plex Sans", "DM Sans", "Helvetica Neue", Arial, sans-serif;
+  font-size: 0.88rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 150ms ease, box-shadow 150ms ease;
+}
+
+.cta-primary:hover {
+  background: #333;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+}
+
+.cta-secondary {
+  display: inline-flex;
+  align-items: center;
+  padding: 10px 22px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink);
+  font-family: "IBM Plex Sans", "DM Sans", "Helvetica Neue", Arial, sans-serif;
+  font-size: 0.88rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color 150ms ease, background 150ms ease;
+}
+
+.cta-secondary:hover {
+  border-color: #c0c0c0;
+  background: var(--surface);
+}
+
+.landing-divider {
+  width: 48px;
+  border: none;
+  border-top: 2px solid var(--line);
+  margin: 48px 0;
+}
+
+.features {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 32px;
+  text-align: center;
+  max-width: 680px;
+  width: 100%;
+}
+
+.feature {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.feature-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 1rem;
+  margin-bottom: 4px;
+}
+
+.feature-heading {
+  margin: 0;
+  font-family: "IBM Plex Sans", "DM Sans", "Helvetica Neue", Arial, sans-serif;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.feature-text {
+  margin: 0;
+  font-size: 0.84rem;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+.landing-footer {
+  margin-top: 48px;
+  padding-top: 24px;
+  border-top: 1px solid var(--soft-line);
+  text-align: center;
+  width: 100%;
+}
+
+.landing-footer p {
+  margin: 0;
+  color: var(--muted);
+  font-family: "IBM Plex Sans", "DM Sans", "Helvetica Neue", Arial, sans-serif;
+  font-size: 0.78rem;
+  letter-spacing: 0.01em;
+}
+
 /* Paper summary block */
 
 .paper-summary-block {
@@ -684,5 +944,34 @@ h3.paper-title {
     top: calc(100% + 8px);
     transform: none;
     width: min(260px, calc(100vw - 48px));
+  }
+
+  .landing {
+    padding-top: 28px;
+  }
+
+  .features {
+    grid-template-columns: 1fr;
+    gap: 24px;
+    max-width: 320px;
+  }
+
+  .hero-cta {
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .cta-primary,
+  .cta-secondary {
+    justify-content: center;
+    width: 100%;
+  }
+
+  .landing-divider {
+    margin: 36px 0;
+  }
+
+  .landing-footer {
+    margin-top: 36px;
   }
 }
