@@ -30,3 +30,14 @@ Personalized daily arXiv discovery for ML researchers.
 - The worker falls back to deterministic hashed embeddings when `sentence-transformers` is unavailable.
 - Topic labels and recommendation reasons are deterministic. LLM summaries are behind a feature flag.
 - Optional paper explanations use Amazon Bedrock's OpenAI-compatible Chat Completions API. The default model is `Qwen3 32B`; set `BEDROCK_API_KEY` and optionally override `SUMMARY_MODEL` or `BEDROCK_BASE_URL`.
+
+## GitHub Actions setup
+
+The scheduled ingest workflow needs these GitHub repository settings:
+
+- Actions variable: `WORKER_BASE_URL`
+- Actions secret: `INGEST_JOB_TOKEN`
+
+`WORKER_BASE_URL` should be the public base URL for the worker service, for example `https://your-worker.example.com`.
+
+`INGEST_JOB_TOKEN` must match the worker's `INGEST_JOB_TOKEN` environment variable, or another token accepted by the worker such as `WORKER_INTERNAL_TOKEN`.
