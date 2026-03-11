@@ -39,7 +39,7 @@ async function DigestContent({ userId, requestedDate }: { userId: string; reques
     fetchDigest(userId, requestedDate)
   ]);
 
-  if (!preferences.onboardingCompleted || preferences.topics.length < 3) {
+  if (!preferences.onboardingCompleted || preferences.areas.length < 3) {
     redirect("/onboarding");
   }
 

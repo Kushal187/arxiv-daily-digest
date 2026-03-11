@@ -12,7 +12,7 @@ export function DigestHeader({ requestedDate, resolvedDate, isFallback }: Props)
       <p className="eyebrow">daily digest</p>
       <h1>{formatCalendarDate(resolvedDate)}</h1>
       <p className="page-description">
-        Ranked against selected topics, followed authors, category preferences, saved papers, and
+        Ranked against selected research areas, followed authors, category preferences, saved papers, and
         dismissals.
       </p>
       {isFallback ? (

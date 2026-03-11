@@ -1,4 +1,4 @@
-import type { DigestResponse, PaperDetailResponse } from "@arxiv-digest/shared";
+import type { DigestResponse, DiscoverResponse, PaperDetailResponse } from "@arxiv-digest/shared";
 import { loadCachedUserPayload } from "./cache";
 import { env } from "./env";
 
@@ -35,6 +35,23 @@ export async function fetchDigest(userId: string, date: string) {
   return result.value;
 }
 
+export async function fetchDiscover(userId: string, date: string, area?: string) {
+  const identity = area ? `${date}:${area}` : `${date}:all`;
+  const result = await loadCachedUserPayload({
+    userId,
+    namespace: "discover",
+    identity,
+    ttlSeconds: 60 * 15,
+    load: () =>
+      callWorker<DiscoverResponse>(
+        `/internal/recommendations/discover?userId=${encodeURIComponent(userId)}&date=${encodeURIComponent(date)}${
+          area ? `&area=${encodeURIComponent(area)}` : ""
+        }`
+      )
+  });
+  return result.value;
+}
+
 export async function fetchPaper(userId: string, paperId: string) {
   const result = await loadCachedUserPayload({
     userId,
@@ -58,6 +75,22 @@ export function fetchDigestWithCacheStatus(userId: string, date: string) {
     load: () =>
       callWorker<DigestResponse>(
         `/internal/recommendations/digest?userId=${encodeURIComponent(userId)}&date=${encodeURIComponent(date)}`
+      )
+  });
+}
+
+export function fetchDiscoverWithCacheStatus(userId: string, date: string, area?: string) {
+  const identity = area ? `${date}:${area}` : `${date}:all`;
+  return loadCachedUserPayload({
+    userId,
+    namespace: "discover",
+    identity,
+    ttlSeconds: 60 * 15,
+    load: () =>
+      callWorker<DiscoverResponse>(
+        `/internal/recommendations/discover?userId=${encodeURIComponent(userId)}&date=${encodeURIComponent(date)}${
+          area ? `&area=${encodeURIComponent(area)}` : ""
+        }`
       )
   });
 }

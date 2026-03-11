@@ -1,4 +1,4 @@
-import type { TopicSlug } from "./topics";
+import type { ResearchAreaSlug } from "./topics";
 
 export type InteractionType = "open" | "save" | "dismiss" | "unsave" | "undismiss";
 
@@ -11,7 +11,8 @@ export type RecommendationReason =
   | { type: "cluster"; label: string; score: number };
 
 export type PaperTopic = {
-  slug: TopicSlug;
+  slug: string;
+  areaSlug: ResearchAreaSlug | null;
   confidence: number;
   isHidden: boolean;
 };
@@ -45,6 +46,14 @@ export type DigestResponse = {
   papers: DigestPaper[];
 };
 
+export type DiscoverResponse = {
+  requestedDate: string;
+  resolvedDate: string;
+  windowDays: number;
+  selectedArea: ResearchAreaSlug | null;
+  papers: DigestPaper[];
+};
+
 export type SummarySource = "extractive" | "llm";
 
 export type PaperDetailResponse = {
@@ -54,7 +63,8 @@ export type PaperDetailResponse = {
 };
 
 export type PreferencesPayload = {
-  topics: TopicSlug[];
+  areas?: ResearchAreaSlug[];
+  topics?: string[];
   followedAuthors: string[];
   categories: string[];
 };

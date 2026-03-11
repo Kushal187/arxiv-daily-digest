@@ -1,4 +1,4 @@
-import type { PreferencesPayload } from "@arxiv-digest/shared";
+import { normalizeAreaSlugs, type PreferencesPayload } from "@arxiv-digest/shared";
 import { matchFollowedAuthors } from "./authors";
 import { loadCachedUserPayload } from "./cache";
 import { sql } from "./db";
@@ -121,7 +121,7 @@ export async function getUserPreferencesFromDb(userId: string) {
   ]);
 
   return {
-    topics: topicRows.map((row) => row.topic_slug),
+    areas: normalizeAreaSlugs(topicRows.map((row) => row.topic_slug)),
     followedAuthors: authorRows.map((row) => row.author_name),
     categories: userRows[0]?.preferred_categories ?? [],
     onboardingCompleted: Boolean(userRows[0]?.onboarding_completed)
@@ -142,6 +142,7 @@ export async function getUserPreferences(userId: string) {
 
 export async function replacePreferences(userId: string, payload: PreferencesPayload) {
   const followedAuthors = dedupeFollowedAuthors(payload.followedAuthors);
+  const areas = normalizeAreaSlugs(payload.areas ?? payload.topics ?? []);
 
   await sql.begin(async (tx) => {
     await tx`
@@ -155,10 +156,10 @@ export async function replacePreferences(userId: string, payload: PreferencesPay
     await tx`delete from user_topic_preferences where user_id = ${userId}`;
     await tx`delete from user_followed_authors where user_id = ${userId}`;
 
-    for (const topic of payload.topics) {
+    for (const area of areas) {
       await tx`
         insert into user_topic_preferences (user_id, topic_slug, weight)
-        values (${userId}, ${topic}, 1)
+        values (${userId}, ${area}, 1)
       `;
     }
 

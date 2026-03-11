@@ -2,18 +2,16 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { TOPIC_TAXONOMY, type DigestPaper } from "@arxiv-digest/shared";
+import { getTopicLabel, type DigestPaper } from "@arxiv-digest/shared";
 import { formatTimestampDate } from "../lib/dates";
 import { PaperActions } from "./paper-actions";
-
-const TOPIC_LABELS = new Map(TOPIC_TAXONOMY.map((topic) => [topic.slug, topic.label]));
 
 export function DigestCard({ paper }: { paper: DigestPaper }) {
   const [expanded, setExpanded] = useState(false);
   const [dismissed, setDismissed] = useState(paper.isDismissed);
   const [saved, setSaved] = useState(paper.isSaved);
   const visibleTopics = useMemo(
-    () => paper.topics.filter((topic) => !topic.isHidden).map((topic) => TOPIC_LABELS.get(topic.slug) ?? topic.slug),
+    () => paper.topics.filter((topic) => !topic.isHidden).map((topic) => getTopicLabel(topic.slug)),
     [paper.topics]
   );
   const primaryReason = paper.reasons[0];

@@ -48,6 +48,7 @@ def make_paper(
         or [
             {
                 "slug": "retrieval-rag",
+                "area_slug": "nlp",
                 "confidence": 0.8,
                 "is_hidden": False,
             }
@@ -64,7 +65,7 @@ def make_paper(
 class RankingTests(unittest.TestCase):
     def test_user_profile_vector_has_expected_dimension(self):
         vector = build_user_profile_vector(
-            selected_topics=["retrieval-rag", "agent-systems"],
+            selected_areas=["nlp", "multimodal"],
             saved_embeddings=[[0.1] * 384],
         )
         self.assertEqual(len(vector), 384)
@@ -82,15 +83,16 @@ class RankingTests(unittest.TestCase):
                 "dismiss_penalty": 0.0,
             },
             {
-                "visible_topics": ["retrieval-rag"],
+                "visible_topics": [{"slug": "retrieval-rag", "label": "Retrieval / RAG", "area_label": "NLP"}],
                 "primary_category": "cs.IR",
                 "cluster_label": "retrieval / benchmark",
                 "author_matches": [],
             },
-            ["retrieval-rag"],
+            ["nlp"],
+            mode="digest",
         )
         labels = [reason["label"] for reason in reasons]
-        self.assertIn("matches retrieval-rag", labels)
+        self.assertIn("matches NLP", labels)
         self.assertIn("similar to papers you saved", labels)
 
     def test_recency_score_decays_with_age(self):
@@ -107,7 +109,7 @@ class RankingTests(unittest.TestCase):
 
         ranked = _rank_papers(
             papers,
-            preferences={"topics": ["retrieval-rag"], "authors": [], "categories": ["cs.IR"]},
+            preferences={"areas": ["nlp"], "authors": [], "categories": ["cs.IR"]},
         )
 
         active = [p for p in ranked if not p["isDismissed"]]
@@ -125,10 +127,22 @@ class RankingTests(unittest.TestCase):
         now = datetime.now(timezone.utc)
         scored = _score_paper(
             paper,
-            selected_topics=["retrieval-rag"],
+            selected_areas=["nlp"],
             followed_authors=[],
             preferred_categories=["cs.IR"],
             now=now,
+            mode="digest",
+            weights={
+                "semantic": 0.28,
+                "topic": 0.2,
+                "category": 0.1,
+                "author": 0.14,
+                "recency": 0.14,
+                "saved_similarity": 0.09,
+                "open_similarity": 0.08,
+                "dismiss_penalty": -0.3,
+            },
+            recency_decay_days=14,
         )
         self.assertGreater(scored["base_score"], 0.0)
         self.assertIn("reasons", scored)
@@ -142,7 +156,7 @@ class RankingTests(unittest.TestCase):
 
         ranked = _rank_papers(
             papers,
-            preferences={"topics": ["retrieval-rag"], "authors": [], "categories": ["cs.IR"]},
+            preferences={"areas": ["nlp"], "authors": [], "categories": ["cs.IR"]},
         )
 
         self.assertEqual([paper["id"] for paper in ranked[:3]], ["a1", "b1", "a2"])
@@ -156,11 +170,34 @@ class RankingTests(unittest.TestCase):
 
         ranked = _rank_papers(
             papers,
-            preferences={"topics": ["retrieval-rag"], "authors": [], "categories": ["cs.IR"]},
+            preferences={"areas": ["nlp"], "authors": [], "categories": ["cs.IR"]},
         )
 
         active = [p for p in ranked if not p["isDismissed"]]
         self.assertEqual([paper["id"] for paper in active[:2]], ["active-a", "active-b"])
+
+    def test_discover_diversity_caps_repeated_topic_buckets(self):
+        papers = [
+            make_paper("rag-1", cluster_id="cluster-a", semantic_score=0.95, saved_similarity=0.8),
+            make_paper("rag-2", cluster_id="cluster-b", semantic_score=0.94, saved_similarity=0.79),
+            make_paper("rag-3", cluster_id="cluster-c", semantic_score=0.93, saved_similarity=0.78),
+            make_paper(
+                "interp-1",
+                cluster_id="cluster-d",
+                semantic_score=0.9,
+                saved_similarity=0.77,
+                topics=[{"slug": "mechanistic-interpretability", "area_slug": "interpretability", "confidence": 0.81, "is_hidden": False}],
+            ),
+        ]
+
+        ranked = _rank_papers(
+            papers,
+            preferences={"areas": ["nlp", "interpretability"], "authors": [], "categories": ["cs.IR"]},
+            mode="discover",
+        )
+
+        active_ids = [paper["id"] for paper in ranked if not paper["isDismissed"]]
+        self.assertEqual(active_ids[:3], ["rag-1", "interp-1", "rag-2"])
 
 
 if __name__ == "__main__":

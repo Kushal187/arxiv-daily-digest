@@ -37,7 +37,7 @@ input {
 }
 
 .shell {
-  max-width: 720px;
+  max-width: 1180px;
   margin: 0 auto;
   padding: 0 20px 56px;
 }
@@ -273,6 +273,10 @@ input {
   font-size: 0.78rem;
 }
 
+.link-pill {
+  text-decoration: none;
+}
+
 .filter-pill {
   cursor: pointer;
 }
@@ -349,6 +353,11 @@ input {
 
 .paper-title.detail {
   font-size: clamp(1.8rem, 4vw, 2.4rem);
+}
+
+.paper-title.discover {
+  font-size: 1.1rem;
+  margin-bottom: 6px;
 }
 
 .paper-title h3,
@@ -479,6 +488,116 @@ h3.paper-title {
   border-left: 0;
   border-right: 0;
   margin-top: 8px;
+}
+
+.discover-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  padding-top: 8px;
+  align-items: stretch;
+}
+
+.discover-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background:
+    linear-gradient(180deg, rgba(237, 243, 251, 0.48), rgba(250, 250, 248, 0.92)),
+    var(--bg);
+  height: 380px;
+  overflow: hidden;
+}
+
+.discover-card-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.discover-meta,
+.discover-reason {
+  margin-bottom: 0;
+}
+
+.paper-title.discover {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
+
+.discover-meta {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+.discover-reason {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+  overflow: hidden;
+}
+
+.discover-tag-row {
+  margin-bottom: 2px;
+}
+
+.discover-abstract {
+  -webkit-line-clamp: 3;
+  margin-bottom: 0;
+}
+
+.discover-card .paper-actions {
+  margin-top: auto;
+}
+
+.discover-abstract-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 200;
+}
+
+.discover-abstract-modal {
+  width: min(760px, 100%);
+  max-height: min(80vh, 720px);
+  overflow: auto;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 18px;
+  display: grid;
+  gap: 10px;
+}
+
+.discover-abstract-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.discover-abstract-modal-header h3 {
+  margin: 0;
+  font-size: 1.05rem;
+  line-height: 1.35;
+}
+
+.discover-abstract-modal-content {
+  margin: 0;
+  line-height: 1.68;
 }
 
 .settings-page {
@@ -956,6 +1075,10 @@ h3.paper-title {
     max-width: 320px;
   }
 
+  .discover-grid {
+    grid-template-columns: 1fr;
+  }
+
   .hero-cta {
     flex-direction: column;
     width: 100%;
@@ -973,5 +1096,11 @@ h3.paper-title {
 
   .landing-footer {
     margin-top: 36px;
+  }
+}
+
+@media (min-width: 761px) and (max-width: 1040px) {
+  .discover-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

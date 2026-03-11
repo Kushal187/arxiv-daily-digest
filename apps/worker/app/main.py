@@ -9,8 +9,8 @@ from pydantic import BaseModel
 
 from .config import settings
 from .db import close_pool, get_connection
-from .services.ingest import run_daily_ingest
-from .services.ranking import build_digest_response, build_paper_response, refresh_user_profile
+from .services.ingest import run_daily_ingest, run_history_backfill
+from .services.ranking import build_digest_response, build_discover_response, build_paper_response, refresh_user_profile
 
 
 @asynccontextmanager
@@ -25,6 +25,12 @@ app = FastAPI(title="arXiv Daily Digest Worker", lifespan=lifespan)
 class DailyIngestRequest(BaseModel):
     runDate: date | None = None
     force: bool = False
+
+
+class HistoryBackfillRequest(BaseModel):
+    startDate: date
+    endDate: date
+    categories: list[str] | None = None
 
 
 def require_internal_token(authorization: str | None = Header(default=None)) -> None:
@@ -48,6 +54,15 @@ def daily_ingest(payload: DailyIngestRequest) -> dict[str, Any]:
     return result
 
 
+@app.post("/internal/jobs/history-backfill", dependencies=[Depends(require_internal_token)])
+def history_backfill(payload: HistoryBackfillRequest) -> dict[str, Any]:
+    return run_history_backfill(
+        start_date=payload.startDate,
+        end_date=payload.endDate,
+        categories=payload.categories,
+    )
+
+
 @app.get("/internal/recommendations/digest", dependencies=[Depends(require_internal_token)])
 def digest(
     user_id: str = Query(alias="userId"),
@@ -55,6 +70,16 @@ def digest(
 ) -> dict[str, Any]:
     with get_connection() as connection:
         return build_digest_response(connection, user_id=user_id, digest_date=digest_date)
+
+
+@app.get("/internal/recommendations/discover", dependencies=[Depends(require_internal_token)])
+def discover(
+    user_id: str = Query(alias="userId"),
+    discover_date: date = Query(alias="date"),
+    area: str | None = Query(default=None),
+) -> dict[str, Any]:
+    with get_connection() as connection:
+        return build_discover_response(connection, user_id=user_id, discover_date=discover_date, area=area)
 
 
 @app.get("/internal/papers/{paper_id}", dependencies=[Depends(require_internal_token)])

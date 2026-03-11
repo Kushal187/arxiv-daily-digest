@@ -106,6 +106,6 @@ describe("cache", () => {
 
     await invalidateUserCache("user-1");
 
-    expect(mockPipelineSet).toHaveBeenCalledTimes(2);
+    expect(mockPipelineSet).toHaveBeenCalledTimes(3);
   });
 });

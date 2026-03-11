@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { TOPIC_TAXONOMY } from "@arxiv-digest/shared";
+import { getTopicLabel } from "@arxiv-digest/shared";
 import { formatTimestampDate } from "../lib/dates";
 import { PaperActions } from "./paper-actions";
 
@@ -17,8 +17,6 @@ type SavedPaper = {
   url: string;
   visible_topics: { slug: string; confidence: number }[];
 };
-
-const TOPIC_LABELS = new Map<string, string>(TOPIC_TAXONOMY.map((topic) => [topic.slug, topic.label]));
 
 export function SavedQueue({ papers }: { papers: SavedPaper[] }) {
   const [sort, setSort] = useState<"saved" | "published">("saved");
@@ -73,7 +71,7 @@ export function SavedQueue({ papers }: { papers: SavedPaper[] }) {
               ))}
               {paper.visible_topics.map((topic) => (
                 <span key={topic.slug} className="metadata-tag">
-                  {TOPIC_LABELS.get(topic.slug) ?? topic.slug}
+                  {getTopicLabel(topic.slug)}
                 </span>
               ))}
             </div>

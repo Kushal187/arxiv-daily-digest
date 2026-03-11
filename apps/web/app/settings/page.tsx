@@ -14,11 +14,11 @@ export default async function SettingsPage() {
 
   return (
     <OnboardingForm
-      initialTopics={preferences.topics}
+      initialAreas={preferences.areas}
       initialAuthors={preferences.followedAuthors}
       initialCategories={preferences.categories}
       title="Settings"
-      description="Adjust topics, authors, and categories that seed your ranking model."
+      description="Adjust research areas, authors, and categories that seed your ranking model."
       submitLabel="Save changes"
     />
   );

@@ -1,6 +1,6 @@
 import { Redis } from "@upstash/redis";
 
-export type CacheNamespace = "digest" | "paper" | "preferences";
+export type CacheNamespace = "digest" | "discover" | "paper" | "preferences";
 export type CacheStatus = "hit" | "miss" | "bypass" | "error";
 
 type CachedLoadOptions<T> = {
@@ -12,7 +12,7 @@ type CachedLoadOptions<T> = {
 };
 
 const CACHE_PREFIX = "arxiv-digest";
-const RANKING_NAMESPACES: CacheNamespace[] = ["digest", "paper"];
+const RANKING_NAMESPACES: CacheNamespace[] = ["digest", "discover", "paper"];
 export const PREFERENCE_AND_RANKING_NAMESPACES: CacheNamespace[] = ["preferences", ...RANKING_NAMESPACES];
 
 let redisClient: Redis | null | undefined;
@@ -100,4 +100,3 @@ export async function invalidateUserCache(userId: string, namespaces: CacheNames
     // Cache invalidation should never block the primary write path.
   }
 }
-

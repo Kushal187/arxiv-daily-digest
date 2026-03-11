@@ -1,7 +1,7 @@
 import unittest
 
 from apps.worker.app.services.embeddings import embed_text
-from apps.worker.app.services.topics import infer_topics
+from apps.worker.app.services.topics import area_for_topic_slug, infer_topics
 
 
 class TopicInferenceTests(unittest.TestCase):
@@ -15,6 +15,7 @@ class TopicInferenceTests(unittest.TestCase):
         slugs = [topic["slug"] for topic in topics]
         self.assertIn("retrieval-rag", slugs)
         self.assertIn("agent-systems", slugs)
+        self.assertEqual(area_for_topic_slug("retrieval-rag"), "nlp")
 
     def test_hidden_flag_is_set_for_low_confidence(self):
         topics = infer_topics(
@@ -36,6 +37,16 @@ class TopicInferenceTests(unittest.TestCase):
 
         slugs = [topic["slug"] for topic in topics]
         self.assertIn("information-retrieval", slugs)
+
+    def test_3d_vision_topic_is_detected(self):
+        topics = infer_topics(
+            "NeRF for indoor reconstruction",
+            "We study neural radiance fields and 3D reconstruction for indoor scenes.",
+            ["cs.CV"],
+        )
+
+        slugs = [topic["slug"] for topic in topics]
+        self.assertIn("reconstruction-3d", slugs)
 
 
 if __name__ == "__main__":

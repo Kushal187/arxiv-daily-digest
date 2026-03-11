@@ -44,7 +44,7 @@ describe("PUT /api/preferences", () => {
       new Request("http://localhost/api/preferences", {
         method: "PUT",
         body: JSON.stringify({
-          topics: ["agent-systems", "multimodal-vlm", "reasoning-planning"],
+          areas: ["nlp", "multimodal", "interpretability"],
           followedAuthors: ["Yann LeCun"],
           categories: ["cs.AI"]
         })
@@ -53,10 +53,31 @@ describe("PUT /api/preferences", () => {
 
     expect(response.status).toBe(200);
     expect(replacePreferences).toHaveBeenCalledWith("user-1", {
-      topics: ["agent-systems", "multimodal-vlm", "reasoning-planning"],
+      areas: ["nlp", "multimodal", "interpretability"],
       followedAuthors: ["Yann LeCun"],
       categories: ["cs.AI"]
     });
-    expect(invalidateUserCache).toHaveBeenCalledWith("user-1", ["preferences", "digest", "paper"]);
+    expect(invalidateUserCache).toHaveBeenCalledWith("user-1", ["preferences", "digest", "discover", "paper"]);
+  });
+
+  it("normalizes legacy topics payloads into research areas", async () => {
+    const { PUT } = await import("./route");
+    const response = await PUT(
+      new Request("http://localhost/api/preferences", {
+        method: "PUT",
+        body: JSON.stringify({
+          topics: ["agent-systems", "multimodal-vlm", "safety-alignment"],
+          followedAuthors: ["Yann LeCun"],
+          categories: ["cs.AI"]
+        })
+      })
+    );
+
+    expect(response.status).toBe(200);
+    expect(replacePreferences).toHaveBeenCalledWith("user-1", {
+      areas: ["nlp", "multimodal", "safety-alignment"],
+      followedAuthors: ["Yann LeCun"],
+      categories: ["cs.AI"]
+    });
   });
 });

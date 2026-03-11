@@ -11,7 +11,7 @@ describe("OnboardingForm", () => {
   function renderForm() {
     render(
       <OnboardingForm
-        initialTopics={["agent-systems", "multimodal-vlm", "reasoning-planning"] as string[]}
+        initialAreas={["nlp", "multimodal", "interpretability"] as string[]}
         initialAuthors={[]}
         initialCategories={["cs.AI"]}
         title="Preferences"

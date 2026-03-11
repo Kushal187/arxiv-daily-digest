@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from functools import lru_cache
 import re
 import unicodedata
@@ -9,24 +9,47 @@ from typing import Any
 
 from .embeddings import embed_text, vector_literal
 from .summaries import get_or_create_summary
-from .topics import TOPIC_DEFINITIONS
+from .topics import (
+    AREA_LABELS,
+    TOPIC_DEFINITIONS,
+    area_for_topic_slug,
+    label_for_area_slug,
+    label_for_topic_slug,
+)
 
 
-BASE_WEIGHTS = {
-    "semantic": 0.32,
-    "topic": 0.18,
+DIGEST_WEIGHTS = {
+    "semantic": 0.28,
+    "topic": 0.20,
     "category": 0.10,
-    "author": 0.12,
-    "recency": 0.08,
+    "author": 0.14,
+    "recency": 0.14,
+    "saved_similarity": 0.09,
+    "open_similarity": 0.08,
+    "dismiss_penalty": -0.30,
+}
+DISCOVER_WEIGHTS = {
+    "semantic": 0.34,
+    "topic": 0.19,
+    "category": 0.08,
+    "author": 0.1,
+    "recency": 0.06,
     "saved_similarity": 0.14,
-    "open_similarity": 0.12,
+    "open_similarity": 0.11,
     "dismiss_penalty": -0.30,
 }
 MIN_CATEGORY_FEED_SIZE = 30
 DIVERSITY_RERANK_LIMIT = 50
 DIVERSITY_REPEAT_PENALTY = 0.07
+DISCOVER_HEAD_COUNT = 12
+DISCOVER_MAX_PER_BUCKET = 2
+DISCOVER_RESULT_COUNT = 24
+DISCOVER_WINDOW_DAYS = 183
+DIGEST_WINDOW_DAYS = 30
 INTERACTION_LOOKBACK_DAYS = 90
 INTERACTION_MAX_ITEMS = 150
+
+RESEARCH_AREA_SET = set(AREA_LABELS.keys())
 
 
 def normalize_author_name(name: str) -> str:
@@ -148,43 +171,95 @@ def topic_prototype(slug: str) -> list[float]:
 
 
 def build_user_profile_vector(
-    selected_topics: list[str],
+    selected_areas: list[str],
     saved_embeddings: list[list[float]],
     opened_embeddings: list[list[float]] | None = None,
 ) -> list[float]:
     weighted_vectors: list[tuple[list[float], float]] = []
-    weighted_vectors.extend((topic_prototype(topic), 1.0) for topic in selected_topics)
+    weighted_vectors.extend((topic_prototype(area), 1.0) for area in selected_areas)
     weighted_vectors.extend((embedding, 1.15) for embedding in saved_embeddings)
     weighted_vectors.extend((embedding, 0.55) for embedding in (opened_embeddings or []))
     return weighted_average_vectors(weighted_vectors)
 
 
-def recency_score(published_at: datetime, now: datetime) -> float:
-    age_hours = max((now - published_at).total_seconds() / 3600.0, 0.0)
-    return max(0.0, 1 - min(age_hours / 72.0, 1.0))
+def recency_score(published_at: datetime, now: datetime, decay_days: int = 3) -> float:
+    age_days = max((now - published_at).total_seconds() / 86400.0, 0.0)
+    return max(0.0, 1 - min(age_days / float(decay_days), 1.0))
 
 
-def _topic_affinity(selected_topics: list[str], paper_topics: list[dict[str, Any]]) -> float:
-    if not selected_topics:
+def _normalize_selected_areas(values: list[str]) -> list[str]:
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        if value in RESEARCH_AREA_SET:
+            slug = value
+        else:
+            slug = area_for_topic_slug(value)
+
+        if not slug or slug in seen:
+            continue
+
+        seen.add(slug)
+        normalized.append(slug)
+
+    return normalized
+
+
+def _visible_topic_records(paper_topics: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    visible = []
+    for topic in paper_topics:
+        if topic["is_hidden"]:
+            continue
+
+        area_slug = topic.get("area_slug") or area_for_topic_slug(topic["slug"])
+        visible.append(
+            {
+                "slug": topic["slug"],
+                "area_slug": area_slug,
+                "label": label_for_topic_slug(topic["slug"]),
+                "area_label": label_for_area_slug(area_slug) if area_slug else topic["slug"],
+                "confidence": float(topic["confidence"]),
+            }
+        )
+
+    return visible
+
+
+def _topic_affinity(selected_areas: list[str], paper_topics: list[dict[str, Any]]) -> float:
+    if not selected_areas:
         return 0.0
 
-    topic_scores = {
-        topic["slug"]: float(topic["confidence"])
-        for topic in paper_topics
-        if not topic["is_hidden"]
-    }
-    overlapping = [topic_scores[slug] for slug in selected_topics if slug in topic_scores]
+    topic_scores: dict[str, float] = {}
+    for topic in paper_topics:
+        if topic["is_hidden"]:
+            continue
+
+        area_slug = topic.get("area_slug") or area_for_topic_slug(topic["slug"])
+        if not area_slug:
+            continue
+
+        topic_scores[area_slug] = max(topic_scores.get(area_slug, 0.0), float(topic["confidence"]))
+
+    overlapping = [topic_scores[slug] for slug in selected_areas if slug in topic_scores]
     return max(overlapping, default=0.0)
 
 
-def generate_reasons(feature_scores: dict[str, float], paper: dict[str, Any], selected_topics: list[str]) -> list[dict]:
+def generate_reasons(
+    feature_scores: dict[str, float],
+    paper: dict[str, Any],
+    selected_areas: list[str],
+    *,
+    mode: str,
+) -> list[dict]:
     reasons: list[dict] = []
+    topic_label = paper["visible_topics"][0]["label"] if paper["visible_topics"] else None
+    area_label = paper["visible_topics"][0]["area_label"] if paper["visible_topics"] else None
 
-    if feature_scores["topic"] > 0 and paper["visible_topics"]:
+    if feature_scores["topic"] > 0 and topic_label:
         reasons.append(
             {
                 "type": "topic",
-                "label": f"matches {paper['visible_topics'][0]}",
+                "label": f"matches {topic_label}" if mode == "discover" else f"matches {area_label or topic_label}",
                 "score": round(feature_scores["topic"], 3),
             }
         )
@@ -220,12 +295,12 @@ def generate_reasons(feature_scores: dict[str, float], paper: dict[str, Any], se
         reasons.append(
             {
                 "type": "freshness",
-                "label": "fresh in the last 72 hours",
+                "label": "fresh in the last 14 days" if mode == "discover" else "fresh in the last 14 days",
                 "score": round(feature_scores["recency"], 3),
             }
         )
 
-    if not reasons and selected_topics and paper["cluster_label"] != "misc":
+    if not reasons and selected_areas and paper["cluster_label"] != "misc":
         reasons.append({"type": "cluster", "label": f"grouped under {paper['cluster_label']}", "score": 0.05})
 
     return reasons[:3]
@@ -234,12 +309,15 @@ def generate_reasons(feature_scores: dict[str, float], paper: dict[str, Any], se
 def _score_paper(
     paper: dict[str, Any],
     *,
-    selected_topics: list[str],
+    selected_areas: list[str],
     followed_authors: list[str],
     preferred_categories: list[str],
     now: datetime,
+    mode: str,
+    weights: dict[str, float],
+    recency_decay_days: int,
 ) -> dict[str, Any]:
-    visible_topics = [topic["slug"] for topic in paper["topics"] if not topic["is_hidden"]]
+    visible_topics = _visible_topic_records(paper["topics"])
     author_matches = match_followed_authors(followed_authors, paper["authors"])
     category_overlap = set(preferred_categories).intersection(paper["categories"]) if preferred_categories else set()
 
@@ -252,19 +330,19 @@ def _score_paper(
 
     feature_scores = {
         "semantic": float(paper.get("semantic_score", 0.0)),
-        "topic": _topic_affinity(selected_topics, paper["topics"]),
+        "topic": _topic_affinity(selected_areas, paper["topics"]),
         "category": category_score,
         "author": author_matches[0]["score"] if author_matches else 0.0,
-        "recency": recency_score(paper["published_at"], now),
+        "recency": recency_score(paper["published_at"], now, decay_days=recency_decay_days),
         "saved_similarity": float(paper.get("saved_similarity", 0.0)),
         "open_similarity": float(paper.get("open_similarity", 0.0)),
         "dismiss_penalty": float(paper.get("dismiss_penalty", 0.0)),
     }
 
-    base_score = sum(feature_scores[name] * weight for name, weight in BASE_WEIGHTS.items())
+    base_score = sum(feature_scores[name] * weight for name, weight in weights.items())
     paper["base_score"] = round(base_score, 4)
     paper["score"] = round(base_score, 4)
-    paper["reasons"] = generate_reasons(feature_scores, paper, selected_topics)
+    paper["reasons"] = generate_reasons(feature_scores, paper, selected_areas, mode=mode)
     return paper
 
 
@@ -300,19 +378,71 @@ def _rerank_with_diversity(papers: list[dict[str, Any]]) -> list[dict[str, Any]]
     return selected + tail
 
 
+def _discover_bucket_id(paper: dict[str, Any]) -> str:
+    visible_topics = paper.get("visible_topics") or []
+    if visible_topics:
+        return visible_topics[0]["slug"]
+
+    return paper.get("cluster_id", "misc")
+
+
+def _rerank_discover(papers: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    ordered = sorted(papers, key=lambda item: item["base_score"], reverse=True)
+    if not ordered:
+        return []
+
+    head = ordered[: min(len(ordered), 400)]
+    tail = ordered[len(head):]
+    selected: list[dict[str, Any]] = []
+    bucket_counts: dict[str, int] = defaultdict(int)
+
+    while head and len(selected) < DISCOVER_HEAD_COUNT:
+        best_index = 0
+        best_score = -10.0
+        for index, candidate in enumerate(head):
+            bucket = _discover_bucket_id(candidate)
+            if bucket_counts[bucket] >= DISCOVER_MAX_PER_BUCKET:
+                continue
+
+            penalty = bucket_counts[bucket] * 0.08
+            rerank_score = candidate["base_score"] - penalty
+            if rerank_score > best_score:
+                best_index = index
+                best_score = rerank_score
+
+        chosen = head.pop(best_index)
+        chosen["score"] = round(best_score if best_score > -10 else chosen["base_score"], 4)
+        bucket_counts[_discover_bucket_id(chosen)] += 1
+        selected.append(chosen)
+
+    remaining = sorted(head + tail, key=lambda item: item["base_score"], reverse=True)
+    for paper in remaining:
+        paper["score"] = round(paper["base_score"], 4)
+
+    combined = selected + remaining
+    return combined[:DISCOVER_RESULT_COUNT]
+
+
 def _rank_papers(
     papers: list[dict[str, Any]],
     *,
     preferences: dict[str, Any],
+    mode: str = "digest",
 ) -> list[dict[str, Any]]:
     now = datetime.now(timezone.utc)
+    selected_areas = _normalize_selected_areas(preferences.get("areas") or preferences.get("topics") or [])
+    weights = DISCOVER_WEIGHTS if mode == "discover" else DIGEST_WEIGHTS
+    recency_decay_days = 90 if mode == "discover" else 14
     scored = [
         _score_paper(
             paper,
-            selected_topics=preferences["topics"],
+            selected_areas=selected_areas,
             followed_authors=preferences["authors"],
             preferred_categories=preferences["categories"],
             now=now,
+            mode=mode,
+            weights=weights,
+            recency_decay_days=recency_decay_days,
         )
         for paper in papers
     ]
@@ -323,7 +453,8 @@ def _rank_papers(
         reverse=True,
     )
 
-    return _rerank_with_diversity(active) + dismissed
+    reranked = _rerank_discover(active) if mode == "discover" else _rerank_with_diversity(active)
+    return reranked + dismissed
 
 
 # ---------------------------------------------------------------------------
@@ -397,18 +528,16 @@ def _interaction_centroids(connection, user_id: str) -> dict[str, str | None]:
     }
 
 
-def _paper_rows_with_scores(
+def _paper_rows_for_window_with_scores(
     connection,
-    digest_date: date,
+    *,
+    start_at: datetime,
+    end_at: datetime,
     user_id: str,
     profile_vector_literal: str,
     centroids: dict[str, str | None],
+    limit: int,
 ) -> list[dict[str, Any]]:
-    """Fetch papers for a date with similarity scores computed in Postgres via pgvector.
-
-    Uses pre-computed centroid vectors for interaction similarity instead of
-    per-row correlated subqueries.
-    """
     has_save = centroids["save"] is not None
     has_open = centroids["open"] is not None
     has_dismiss = centroids["dismiss"] is not None
@@ -457,14 +586,17 @@ def _paper_rows_with_scores(
               ) as is_dismissed
             from papers p
             left join paper_clusters pc on pc.paper_id = p.id
-            where p.ingest_date = %(digest_date)s
+            where p.published_at >= %(start_at)s
+              and p.published_at <= %(end_at)s
             order by p.published_at desc
-            limit 250
+            limit %(limit)s
             """,
             {
                 "profile": profile_vector_literal,
                 "uid": user_id,
-                "digest_date": digest_date,
+                "start_at": start_at,
+                "end_at": end_at,
+                "limit": limit,
                 "has_save": has_save,
                 "save_centroid": centroids["save"] or profile_vector_literal,
                 "has_open": has_open,
@@ -571,6 +703,7 @@ def _topics_for_papers(connection, paper_ids: list[str]) -> dict[str, list[dict[
         topics[row["paper_id"]].append(
             {
                 "slug": row["topic_slug"],
+                "area_slug": area_for_topic_slug(row["topic_slug"]),
                 "confidence": float(row["confidence"]),
                 "is_hidden": bool(row["is_hidden"]),
             }
@@ -599,9 +732,11 @@ def _user_preferences(connection, user_id: str) -> dict[str, Any]:
         )
         author_rows = cursor.fetchall()
 
+    areas = _normalize_selected_areas([row["topic_slug"] for row in topic_rows])
     return {
         "categories": user_row["preferred_categories"] or [],
-        "topics": [row["topic_slug"] for row in topic_rows],
+        "areas": areas,
+        "topics": areas,
         "authors": [row["author_name"] for row in author_rows],
         "profile_embedding": user_row.get("profile_embedding"),
     }
@@ -613,7 +748,7 @@ def _resolve_profile_vector(connection, user_id: str, preferences: dict[str, Any
     if raw is not None:
         return parse_vector(raw)
 
-    profile = build_user_profile_vector(preferences["topics"], saved_embeddings=[])
+    profile = build_user_profile_vector(preferences["areas"], saved_embeddings=[])
     _persist_profile_vector(connection, user_id, profile)
     return profile
 
@@ -668,7 +803,7 @@ def refresh_user_profile(connection, user_id: str) -> list[float]:
     opened_embeddings = [parse_vector(row["embedding"]) for row in opened_rows]
 
     profile = build_user_profile_vector(
-        preferences["topics"],
+        preferences["areas"],
         saved_embeddings,
         opened_embeddings=opened_embeddings,
     )
@@ -713,6 +848,7 @@ def _serialize_topics(topics: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [
         {
             "slug": topic["slug"],
+            "areaSlug": topic.get("area_slug"),
             "confidence": topic["confidence"],
             "isHidden": topic["is_hidden"],
         }
@@ -747,6 +883,70 @@ def _visible_ranked_papers(ranked: list[dict[str, Any]]) -> list[dict[str, Any]]
     return [paper for paper in ranked if not paper["isDismissed"]]
 
 
+def _window_bounds(end_date: date, *, days: int) -> tuple[datetime, datetime]:
+    end_at = datetime(end_date.year, end_date.month, end_date.day, 23, 59, 59, tzinfo=timezone.utc)
+    start_at = end_at.replace(hour=0, minute=0, second=0, microsecond=0)
+    start_at = start_at - timedelta(days=days - 1)
+    return start_at, end_at
+
+
+def _discover_candidate_rows(
+    connection,
+    *,
+    start_at: datetime,
+    end_at: datetime,
+    user_id: str,
+    profile_vector_literal: str,
+    centroids: dict[str, str | None],
+    limit: int,
+    slice_days: int = 30,
+) -> list[dict[str, Any]]:
+    """Collect discover candidates across the full window, not only newest papers."""
+    slices: list[tuple[datetime, datetime]] = []
+    cursor_end = end_at
+    while cursor_end >= start_at:
+        cursor_start = max(start_at, cursor_end - timedelta(days=slice_days - 1))
+        slices.append((cursor_start, cursor_end))
+        cursor_end = cursor_start - timedelta(seconds=1)
+
+    if not slices:
+        return []
+
+    per_slice_limit = max(80, (limit // len(slices)) + 60)
+    seen: set[str] = set()
+    combined: list[dict[str, Any]] = []
+
+    for slice_start, slice_end in slices:
+        rows = _paper_rows_for_window_with_scores(
+            connection,
+            start_at=slice_start,
+            end_at=slice_end,
+            user_id=user_id,
+            profile_vector_literal=profile_vector_literal,
+            centroids=centroids,
+            limit=per_slice_limit,
+        )
+        for row in rows:
+            row_id = row["id"]
+            if row_id in seen:
+                continue
+            seen.add(row_id)
+            combined.append(row)
+            if len(combined) >= limit:
+                return combined
+
+    return combined
+
+
+def _paper_matches_area(paper: dict[str, Any], area_slug: str) -> bool:
+    for topic in paper["topics"]:
+        topic_area = topic.get("area_slug") or area_for_topic_slug(topic["slug"])
+        if topic_area == area_slug and not topic["is_hidden"]:
+            return True
+
+    return False
+
+
 # ---------------------------------------------------------------------------
 # Public entry points
 # ---------------------------------------------------------------------------
@@ -766,8 +966,17 @@ def build_digest_response(connection, user_id: str, digest_date: date) -> dict[s
     profile_vector = _resolve_profile_vector(connection, user_id, preferences)
     profile_lit = vector_literal(profile_vector)
     centroids = _interaction_centroids(connection, user_id)
+    window_start, window_end = _window_bounds(resolved_date, days=DIGEST_WINDOW_DAYS)
 
-    paper_rows = _paper_rows_with_scores(connection, resolved_date, user_id, profile_lit, centroids)
+    paper_rows = _paper_rows_for_window_with_scores(
+        connection,
+        start_at=window_start,
+        end_at=window_end,
+        user_id=user_id,
+        profile_vector_literal=profile_lit,
+        centroids=centroids,
+        limit=400,
+    )
     paper_ids = [row["id"] for row in paper_rows]
     topics_by_paper = _topics_for_papers(connection, paper_ids)
 
@@ -784,16 +993,18 @@ def build_digest_response(connection, user_id: str, digest_date: date) -> dict[s
 
     did_backfill_categories = False
     if not preferred_categories:
-        ranked = _visible_ranked_papers(_rank_papers(papers, preferences=preferences))
+        ranked = _visible_ranked_papers(_rank_papers(papers, preferences=preferences, mode="digest"))
     else:
-        ranked_matching = _visible_ranked_papers(_rank_papers(matching, preferences=preferences))
+        ranked_matching = _visible_ranked_papers(_rank_papers(matching, preferences=preferences, mode="digest"))
         if len(ranked_matching) >= MIN_CATEGORY_FEED_SIZE:
             ranked = ranked_matching
         else:
             did_backfill_categories = True
             matching_ids = {paper["id"] for paper in matching}
             backfill_candidates = [paper for paper in papers if paper["id"] not in matching_ids]
-            ranked_backfill = _visible_ranked_papers(_rank_papers(backfill_candidates, preferences=preferences))
+            ranked_backfill = _visible_ranked_papers(
+                _rank_papers(backfill_candidates, preferences=preferences, mode="digest")
+            )
             needed = max(MIN_CATEGORY_FEED_SIZE - len(ranked_matching), 0)
             ranked = ranked_matching + ranked_backfill[:needed]
 
@@ -804,6 +1015,51 @@ def build_digest_response(connection, user_id: str, digest_date: date) -> dict[s
         "isFallback": resolved_date != digest_date,
         "didBackfillCategories": did_backfill_categories,
         "papers": response_papers,
+    }
+
+
+def build_discover_response(
+    connection,
+    user_id: str,
+    discover_date: date,
+    area: str | None = None,
+) -> dict[str, Any]:
+    preferences = _user_preferences(connection, user_id)
+    profile_vector = _resolve_profile_vector(connection, user_id, preferences)
+    profile_lit = vector_literal(profile_vector)
+    centroids = _interaction_centroids(connection, user_id)
+    window_start, window_end = _window_bounds(discover_date, days=DISCOVER_WINDOW_DAYS)
+
+    paper_rows = _discover_candidate_rows(
+        connection,
+        start_at=window_start,
+        end_at=window_end,
+        user_id=user_id,
+        profile_vector_literal=profile_lit,
+        centroids=centroids,
+        limit=1800,
+    )
+    paper_ids = [row["id"] for row in paper_rows]
+    topics_by_paper = _topics_for_papers(connection, paper_ids)
+    papers = [_paper_to_payload(row, topics_by_paper.get(row["id"], [])) for row in paper_rows]
+
+    selected_area = area if area in RESEARCH_AREA_SET else None
+    if selected_area:
+        papers = [paper for paper in papers if _paper_matches_area(paper, selected_area)]
+
+    discover_preferences = {
+        **preferences,
+        "areas": [selected_area] if selected_area else preferences["areas"],
+        "topics": [selected_area] if selected_area else preferences["areas"],
+    }
+    ranked = _visible_ranked_papers(_rank_papers(papers, preferences=discover_preferences, mode="discover"))
+
+    return {
+        "requestedDate": discover_date.isoformat(),
+        "resolvedDate": discover_date.isoformat(),
+        "windowDays": DISCOVER_WINDOW_DAYS,
+        "selectedArea": selected_area,
+        "papers": [_serialize_paper(paper) for paper in ranked[:DISCOVER_RESULT_COUNT]],
     }
 
 
@@ -823,10 +1079,13 @@ def build_paper_response(connection, user_id: str, paper_id: str) -> dict[str, A
     now = datetime.now(timezone.utc)
     scored = _score_paper(
         selected,
-        selected_topics=preferences["topics"],
+        selected_areas=preferences["areas"],
         followed_authors=preferences["authors"],
         preferred_categories=preferences["categories"],
         now=now,
+        mode="digest",
+        weights=DIGEST_WEIGHTS,
+        recency_decay_days=14,
     )
 
     summary, summary_source = get_or_create_summary(connection, paper_id, scored["title"], scored["abstract"])

@@ -17,6 +17,30 @@ export function formatTimestampDate(value: string, locale?: string): string {
   }).format(new Date(value));
 }
 
+export function formatRelativeAge(value: string, now: Date = new Date()): string {
+  const deltaMs = now.getTime() - new Date(value).getTime();
+  const deltaDays = Math.max(Math.floor(deltaMs / 86400000), 0);
+
+  if (deltaDays <= 0) {
+    return "today";
+  }
+
+  if (deltaDays === 1) {
+    return "1 day ago";
+  }
+
+  if (deltaDays < 30) {
+    return `${deltaDays} days ago`;
+  }
+
+  const deltaMonths = Math.floor(deltaDays / 30);
+  if (deltaMonths === 1) {
+    return "1 month ago";
+  }
+
+  return `${deltaMonths} months ago`;
+}
+
 export function calendarDateString(value: Date, timeZone?: string): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
     year: "numeric",

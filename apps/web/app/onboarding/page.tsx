@@ -12,17 +12,17 @@ export default async function OnboardingPage() {
 
   const preferences = await getUserPreferences(session.user.id);
 
-  if (preferences.onboardingCompleted && preferences.topics.length >= 3) {
+  if (preferences.onboardingCompleted && preferences.areas.length >= 3) {
     redirect("/digest");
   }
 
   return (
     <OnboardingForm
-      initialTopics={preferences.topics}
+      initialAreas={preferences.areas}
       initialAuthors={preferences.followedAuthors}
       initialCategories={preferences.categories}
       title="Tune your daily research feed"
-      description="Pick a focused set of topics so the first digest has a useful cold-start profile."
+      description="Pick a focused set of research areas so the first digest has a useful cold-start profile."
       submitLabel="Build my digest"
     />
   );

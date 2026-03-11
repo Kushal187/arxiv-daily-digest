@@ -16,6 +16,7 @@ export function Nav({ session }: { session: Session | null }) {
         {session ? (
           <>
             <Link href="/digest">Digest</Link>
+            <Link href="/discover">Discover</Link>
             <Link href="/authors">Authors</Link>
             <Link href="/saved">Saved</Link>
             <Link href="/settings">Settings</Link>

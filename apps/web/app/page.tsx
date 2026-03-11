@@ -9,7 +9,7 @@ export default async function HomePage() {
 
   if (session?.user?.id) {
     const preferences = await getUserPreferences(session.user.id);
-    redirect(preferences.onboardingCompleted && preferences.topics.length >= 3 ? "/digest" : "/onboarding");
+    redirect(preferences.onboardingCompleted && preferences.areas.length >= 3 ? "/digest" : "/onboarding");
   }
 
   return (

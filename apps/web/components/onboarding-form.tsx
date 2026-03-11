@@ -3,9 +3,9 @@
 import { KeyboardEvent, useState } from "react";
 import {
   DEFAULT_ARXIV_CATEGORIES,
-  TOPIC_TAXONOMY,
+  RESEARCH_AREAS,
   type PreferencesPayload,
-  type TopicSlug
+  type ResearchAreaSlug
 } from "@arxiv-digest/shared";
 import {
   dedupeFollowedAuthors,
@@ -14,7 +14,7 @@ import {
 } from "../lib/followed-authors";
 
 type Props = {
-  initialTopics: string[];
+  initialAreas: string[];
   initialAuthors: string[];
   initialCategories: string[];
   title: string;
@@ -23,14 +23,14 @@ type Props = {
 };
 
 export function OnboardingForm({
-  initialTopics,
+  initialAreas,
   initialAuthors,
   initialCategories,
   title,
   description,
   submitLabel
 }: Props) {
-  const [topics, setTopics] = useState<TopicSlug[]>(initialTopics as TopicSlug[]);
+  const [areas, setAreas] = useState<ResearchAreaSlug[]>(initialAreas as ResearchAreaSlug[]);
   const [authors, setAuthors] = useState<string[]>(() => dedupeFollowedAuthors(initialAuthors));
   const [authorInput, setAuthorInput] = useState("");
   const [categories, setCategories] = useState<string[]>(
@@ -39,8 +39,8 @@ export function OnboardingForm({
   const [error, setError] = useState<string | null>(null);
   const [isPending, setIsPending] = useState(false);
 
-  function toggleTopic(slug: TopicSlug) {
-    setTopics((current) =>
+  function toggleArea(slug: ResearchAreaSlug) {
+    setAreas((current) =>
       current.includes(slug) ? current.filter((item) => item !== slug) : [...current, slug]
     );
   }
@@ -82,13 +82,13 @@ export function OnboardingForm({
   }
 
   async function onSubmit() {
-    if (topics.length < 3 || topics.length > 8) {
-      setError("Choose between 3 and 8 topics.");
+    if (areas.length < 3 || areas.length > 8) {
+      setError("Choose between 3 and 8 research areas.");
       return;
     }
 
     const payload: PreferencesPayload = {
-      topics,
+      areas,
       followedAuthors: authors,
       categories
     };
@@ -124,22 +124,22 @@ export function OnboardingForm({
       </div>
 
       <div className="settings-section">
-        <h2>Pick your topics</h2>
+        <h2>Pick your research areas</h2>
         <p className="section-note">Choose 3 to 8. These seed your cold-start ranking profile.</p>
         <p className="selection-count">
-          selected {topics.length} / 8
+          selected {areas.length} / 8
         </p>
         <div className="settings-grid">
-          {TOPIC_TAXONOMY.map((topic) => (
-            <label key={topic.slug} className="checkbox-row">
+          {RESEARCH_AREAS.map((area) => (
+            <label key={area.slug} className="checkbox-row">
               <input
                 type="checkbox"
-                checked={topics.includes(topic.slug)}
-                onChange={() => toggleTopic(topic.slug)}
+                checked={areas.includes(area.slug)}
+                onChange={() => toggleArea(area.slug)}
               />
               <span>
-                <strong>{topic.label}</strong>
-                <small>{topic.description}</small>
+                <strong>{area.label}</strong>
+                <small>{area.description}</small>
               </span>
             </label>
           ))}

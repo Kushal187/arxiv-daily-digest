@@ -1,13 +1,11 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { TOPIC_TAXONOMY } from "@arxiv-digest/shared";
+import { getTopicLabel } from "@arxiv-digest/shared";
 import { ExpandableAbstract } from "../../../components/expandable-abstract";
 import { PaperActions } from "../../../components/paper-actions";
 import { PaperSummary } from "../../../components/paper-summary";
 import { auth } from "../../../lib/auth";
 import { fetchPaper } from "../../../lib/worker";
-
-const TOPIC_LABELS = new Map(TOPIC_TAXONOMY.map((topic) => [topic.slug, topic.label]));
 
 export default async function PaperDetailPage({
   params
@@ -47,7 +45,7 @@ export default async function PaperDetailPage({
             .filter((topic) => !topic.isHidden)
             .map((topic) => (
               <span key={topic.slug} className="metadata-tag">
-                {TOPIC_LABELS.get(topic.slug) ?? topic.slug}
+                {getTopicLabel(topic.slug)}
               </span>
             ))}
         </div>
