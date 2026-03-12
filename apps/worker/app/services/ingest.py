@@ -13,7 +13,7 @@ from .topics import infer_topics
 
 
 DEFAULT_CATEGORIES = ["cs.AI", "cs.LG", "cs.CL", "cs.CV", "cs.IR", "stat.ML", "cs.RO", "eess.AS"]
-RETENTION_DAYS = 183  # matches DISCOVER_WINDOW_DAYS, the max lookback
+RETENTION_DAYS = 120
 logger = logging.getLogger(__name__)
 
 
