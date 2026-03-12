@@ -2,11 +2,13 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { getAreaLabel, getTopicLabel, type DigestPaper } from "@arxiv-digest/shared";
 import { formatRelativeAge, formatTimestampDate } from "../lib/dates";
 import { PaperActions } from "./paper-actions";
 
 export function DiscoverCard({ paper }: { paper: DigestPaper }) {
+  const router = useRouter();
   const [abstractOpen, setAbstractOpen] = useState(false);
   const [saved, setSaved] = useState(paper.isSaved);
   const visibleTopics = useMemo(() => paper.topics.filter((topic) => !topic.isHidden).slice(0, 2), [paper.topics]);
@@ -55,6 +57,11 @@ export function DiscoverCard({ paper }: { paper: DigestPaper }) {
         compact
         allowDismiss={false}
         onSavedChange={setSaved}
+        onInteractionCommitted={(action) => {
+          if (action === "save" || action === "unsave") {
+            router.refresh();
+          }
+        }}
       />
 
       {abstractOpen ? (

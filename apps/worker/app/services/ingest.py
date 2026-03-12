@@ -13,6 +13,7 @@ from .topics import infer_topics
 
 
 DEFAULT_CATEGORIES = ["cs.AI", "cs.LG", "cs.CL", "cs.CV", "cs.IR", "stat.ML", "cs.RO", "eess.AS"]
+RETENTION_DAYS = 183  # matches DISCOVER_WINDOW_DAYS, the max lookback
 logger = logging.getLogger(__name__)
 
 
@@ -344,12 +345,54 @@ def run_daily_ingest(run_date: date | None = None, force: bool = False) -> dict[
             }
             _finish_job(connection, job_name, run_date, "succeeded", metadata)
             connection.commit()
-            return {"status": "succeeded", "runDate": run_date.isoformat(), **metadata}
         except Exception as exc:
             connection.rollback()
             _finish_job(connection, job_name, run_date, "failed", {"error": str(exc)})
             connection.commit()
             raise
+
+    # Run cleanup outside the connection block so it doesn't block future ingests
+    try:
+        cleanup_result = run_cleanup()
+        metadata["cleanup"] = cleanup_result
+    except Exception as cleanup_exc:
+        logger.warning("Post-ingest cleanup failed (non-fatal): %s", cleanup_exc)
+        metadata["cleanup"] = {"status": "failed", "error": str(cleanup_exc)}
+
+    return {"status": "succeeded", "runDate": run_date.isoformat(), **metadata}
+
+
+def run_cleanup(retention_days: int = RETENTION_DAYS) -> dict[str, Any]:
+    """Delete papers older than retention_days to keep DB size under control.
+
+    Related rows in paper_authors, paper_topics, paper_clusters,
+    paper_summaries, and user_interactions are removed via ON DELETE CASCADE.
+    """
+    cutoff = date.today() - timedelta(days=retention_days)
+    logger.info("Running cleanup: deleting papers with ingest_date < %s", cutoff.isoformat())
+
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "delete from papers where ingest_date < %s",
+                (cutoff,),
+            )
+            deleted_count = cursor.rowcount
+
+            cursor.execute(
+                "delete from job_runs where run_date < %s",
+                (cutoff,),
+            )
+            deleted_jobs = cursor.rowcount
+
+        connection.commit()
+        logger.info("Cleanup complete: removed %s papers and %s job_runs", deleted_count, deleted_jobs)
+        return {
+            "status": "succeeded",
+            "cutoff_date": cutoff.isoformat(),
+            "deleted_papers": deleted_count,
+            "deleted_job_runs": deleted_jobs,
+        }
 
 
 def run_history_backfill(

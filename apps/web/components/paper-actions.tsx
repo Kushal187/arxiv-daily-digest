@@ -12,6 +12,7 @@ type Props = {
   allowDismiss?: boolean;
   onDismissedChange?: (dismissed: boolean) => void;
   onSavedChange?: (saved: boolean) => void;
+  onInteractionCommitted?: (action: InteractionType) => void;
 };
 
 async function sendInteraction(paperId: string, action: InteractionType) {
@@ -36,7 +37,8 @@ export function PaperActions({
   compact = false,
   allowDismiss = true,
   onDismissedChange,
-  onSavedChange
+  onSavedChange,
+  onInteractionCommitted
 }: Props) {
   const [saved, setSaved] = useState(initialSaved);
   const [dismissed, setDismissed] = useState(initialDismissed);
@@ -56,7 +58,9 @@ export function PaperActions({
     onSavedChange?.(nextSaved);
 
     try {
-      await sendInteraction(paperId, nextSaved ? "save" : "unsave");
+      const action: InteractionType = nextSaved ? "save" : "unsave";
+      await sendInteraction(paperId, action);
+      onInteractionCommitted?.(action);
     } catch {
       setSaved(!nextSaved);
       onSavedChange?.(!nextSaved);
@@ -74,7 +78,9 @@ export function PaperActions({
     onDismissedChange?.(nextDismissed);
 
     try {
-      await sendInteraction(paperId, nextDismissed ? "dismiss" : "undismiss");
+      const action: InteractionType = nextDismissed ? "dismiss" : "undismiss";
+      await sendInteraction(paperId, action);
+      onInteractionCommitted?.(action);
     } catch {
       setDismissed(!nextDismissed);
       onDismissedChange?.(!nextDismissed);
@@ -86,9 +92,11 @@ export function PaperActions({
 
   function handleOpen() {
     setError(null);
-    void sendInteraction(paperId, "open").catch(() => {
+    void sendInteraction(paperId, "open")
+      .then(() => onInteractionCommitted?.("open"))
+      .catch(() => {
       // Navigation should still proceed if tracking fails.
-    });
+      });
   }
 
   const saveButtonClass = saved ? "action-link action-link-save is-active" : "action-link action-link-save";

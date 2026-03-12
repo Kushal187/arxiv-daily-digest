@@ -9,7 +9,7 @@ from pydantic import BaseModel
 
 from .config import settings
 from .db import close_pool, get_connection
-from .services.ingest import run_daily_ingest, run_history_backfill
+from .services.ingest import run_cleanup, run_daily_ingest, run_history_backfill
 from .services.ranking import build_digest_response, build_discover_response, build_paper_response, refresh_user_profile
 
 
@@ -61,6 +61,11 @@ def history_backfill(payload: HistoryBackfillRequest) -> dict[str, Any]:
         end_date=payload.endDate,
         categories=payload.categories,
     )
+
+
+@app.post("/internal/jobs/cleanup", dependencies=[Depends(require_internal_token)])
+def cleanup() -> dict[str, Any]:
+    return run_cleanup()
 
 
 @app.get("/internal/recommendations/digest", dependencies=[Depends(require_internal_token)])
