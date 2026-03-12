@@ -8,24 +8,20 @@ on:
 jobs:
   ingest:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - name: Trigger worker ingest
-        env:
-          WORKER_BASE_URL: ${{ vars.WORKER_BASE_URL }}
-          INGEST_JOB_TOKEN: ${{ secrets.INGEST_JOB_TOKEN }}
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
         run: |
-          if [ -z "$WORKER_BASE_URL" ]; then
-            echo "::error title=Missing Actions variable::Set WORKER_BASE_URL in GitHub Actions variables (for example, https://your-worker.example.com)."
-            exit 1
-          fi
+          pip install -e ./apps/worker
+          pip install sentence-transformers
 
-          if [ -z "$INGEST_JOB_TOKEN" ]; then
-            echo "::error title=Missing Actions secret::Set INGEST_JOB_TOKEN in GitHub Actions secrets."
-            exit 1
-          fi
-
-          curl --fail --show-error --request POST \
-            --url "$WORKER_BASE_URL/internal/jobs/daily-ingest" \
-            --header "Authorization: Bearer $INGEST_JOB_TOKEN" \
-            --header "Content-Type: application/json" \
-            --data '{"force": false}'
+      - name: Run daily ingest
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python scripts/run-ingest.py

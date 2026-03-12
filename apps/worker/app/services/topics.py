@@ -1,10 +1,17 @@
 from __future__ import annotations
 
+import json
 from functools import lru_cache
+from pathlib import Path
 from typing import Any
 
 from .embeddings import embed_text
 from .similarity import cosine_similarity
+
+_PROTOTYPES_PATH = Path(__file__).resolve().parent / "prototypes.json"
+_PRECOMPUTED_PROTOTYPES: dict[str, list[float]] = (
+    json.loads(_PROTOTYPES_PATH.read_text()) if _PROTOTYPES_PATH.exists() else {}
+)
 
 
 TOPIC_DEFINITIONS = [
@@ -341,6 +348,9 @@ def _category_score(categories: list[str], priors: dict[str, float]) -> float:
 
 @lru_cache(maxsize=None)
 def _topic_prototype(slug: str) -> list[float]:
+    if slug in _PRECOMPUTED_PROTOTYPES:
+        return _PRECOMPUTED_PROTOTYPES[slug]
+
     for definition in TOPIC_DEFINITIONS:
         if definition["slug"] == slug:
             return embed_text(definition["prototype"])

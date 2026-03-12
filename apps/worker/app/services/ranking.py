@@ -163,6 +163,11 @@ def weighted_average_vectors(weighted_vectors: list[tuple[list[float], float]]) 
 
 @lru_cache(maxsize=None)
 def topic_prototype(slug: str) -> list[float]:
+    from .topics import _PRECOMPUTED_PROTOTYPES
+
+    if slug in _PRECOMPUTED_PROTOTYPES:
+        return _PRECOMPUTED_PROTOTYPES[slug]
+
     for definition in TOPIC_DEFINITIONS:
         if definition["slug"] == slug:
             return embed_text(definition["prototype"])
