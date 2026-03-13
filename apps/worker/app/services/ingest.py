@@ -328,17 +328,48 @@ def run_daily_ingest(run_date: date | None = None, force: bool = False) -> dict[
 
             _start_job(connection, job_name, run_date)
 
+            all_fetched = fetch_recent_entries(DEFAULT_CATEGORIES)
             papers = [
                 paper
-                for paper in fetch_recent_entries(DEFAULT_CATEGORIES)
+                for paper in all_fetched
                 if window_start <= paper["published_at"] <= window_end
             ]
+
+            if not all_fetched:
+                logger.warning(
+                    "arXiv API returned 0 papers for categories=%s on run_date=%s. "
+                    "This may indicate an API outage.",
+                    DEFAULT_CATEGORIES,
+                    run_date.isoformat(),
+                )
+            elif not papers:
+                is_weekday = run_date.weekday() < 5
+                if is_weekday and not force:
+                    logger.warning(
+                        "arXiv API returned %d papers but 0 fell within ingest window "
+                        "[%s, %s] on weekday %s. This is unusual.",
+                        len(all_fetched),
+                        window_start.isoformat(),
+                        window_end.isoformat(),
+                        run_date.isoformat(),
+                    )
+                else:
+                    logger.info(
+                        "0 papers in window [%s, %s] for run_date=%s. "
+                        "Fetched %d total from API.",
+                        window_start.isoformat(),
+                        window_end.isoformat(),
+                        run_date.isoformat(),
+                        len(all_fetched),
+                    )
+
             enriched = _enrich_papers(papers)
             upserted_ids = _upsert_enriched_papers(connection, enriched, cluster_date=run_date, ingest_date=run_date)
 
             connection.commit()
             metadata = {
                 "fetched_count": len(papers),
+                "total_api_count": len(all_fetched),
                 "upserted_count": len(upserted_ids),
                 "window_start": window_start.isoformat(),
                 "window_end": window_end.isoformat(),

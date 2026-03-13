@@ -1003,8 +1003,9 @@ h3.paper-title {
   gap: 8px;
 }
 
-/* Digest skeleton loading state */
+/* Skeleton loading state */
 
+.skeleton-shimmer,
 .digest-skeleton-shimmer {
   display: block;
   background: linear-gradient(90deg, var(--soft-line) 25%, #e8e8e8 50%, var(--soft-line) 75%);
@@ -1013,6 +1014,7 @@ h3.paper-title {
   border-radius: 4px;
 }
 
+.skeleton-row,
 .digest-skeleton-row {
   opacity: 1;
   animation: digest-fade-in 300ms ease both;

@@ -6,7 +6,8 @@ import { env } from "./env";
 export const { handlers, auth, signIn, signOut } = NextAuth({
   secret: env.nextAuthSecret,
   session: {
-    strategy: "jwt"
+    strategy: "jwt",
+    maxAge: 7 * 24 * 60 * 60,
   },
   providers: [
     Google({
