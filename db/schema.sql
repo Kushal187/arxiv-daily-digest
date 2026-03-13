@@ -29,6 +29,9 @@ create table if not exists user_followed_authors (
   primary key (user_id, author_name)
 );
 
+create index if not exists user_topic_preferences_user_id_idx on user_topic_preferences (user_id);
+create index if not exists user_followed_authors_user_id_idx on user_followed_authors (user_id);
+
 create table if not exists papers (
   id uuid primary key default gen_random_uuid(),
   canonical_arxiv_id text not null,

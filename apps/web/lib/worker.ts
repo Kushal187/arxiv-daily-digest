@@ -109,12 +109,19 @@ export function fetchPaperWithCacheStatus(userId: string, paperId: string) {
 }
 
 export async function refreshUserProfile(userId: string) {
-  try {
-    await callWorker<{ ok: boolean }>(
-      `/internal/users/${encodeURIComponent(userId)}/refresh-profile`,
-      { method: "POST" }
-    );
-  } catch {
-    // Profile refresh is best-effort; stale profile will be recomputed on next digest request.
+  const maxAttempts = 3;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      await callWorker<{ ok: boolean }>(
+        `/internal/users/${encodeURIComponent(userId)}/refresh-profile`,
+        { method: "POST" }
+      );
+      return;
+    } catch {
+      if (attempt < maxAttempts) {
+        await new Promise((r) => setTimeout(r, 1000 * attempt));
+      }
+      // Final attempt failure is silent — stale profile will be recomputed on next digest request.
+    }
   }
 }
