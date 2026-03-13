@@ -53,9 +53,16 @@ input {
 }
 
 .brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   font-size: 1.1rem;
   font-weight: 600;
   line-height: 1.1;
+}
+
+.brand-icon {
+  flex-shrink: 0;
 }
 
 .site-branding,

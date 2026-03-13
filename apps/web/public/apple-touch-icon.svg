@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180" width="180" height="180">
+  <!-- Apple touch icon -->
+  <rect width="180" height="180" rx="40" fill="#1a4b8c"/>
+  <path d="M50.5 33h62l22.5 22.5v90a5.5 5.5 0 0 1-5.5 5.5h-79a5.5 5.5 0 0 1-5.5-5.5V38.5A5.5 5.5 0 0 1 50.5 33z" fill="#ffffff" opacity="0.95"/>
+  <path d="M112.5 33l22.5 22.5h-17a5.5 5.5 0 0 1-5.5-5.5V33z" fill="#c8d8ed"/>
+  <rect x="62" y="76" width="56" height="8" rx="4" fill="#1a4b8c" opacity="0.7"/>
+  <rect x="62" y="93" width="42" height="8" rx="4" fill="#1a4b8c" opacity="0.5"/>
+  <rect x="62" y="110" width="28" height="8" rx="4" fill="#1a4b8c" opacity="0.3"/>
+</svg>

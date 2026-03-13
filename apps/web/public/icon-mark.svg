@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- Standalone icon mark at high resolution for app icons, social, etc. -->
+  <rect width="512" height="512" rx="112" fill="#1a4b8c"/>
+  <path d="M144 96h176l64 64v256a16 16 0 0 1-16 16H144a16 16 0 0 1-16-16V112a16 16 0 0 1 16-16z" fill="#ffffff" opacity="0.95"/>
+  <path d="M320 96l64 64h-48a16 16 0 0 1-16-16V96z" fill="#c8d8ed"/>
+  <!-- Text lines -->
+  <rect x="176" y="216" width="160" height="22" rx="11" fill="#1a4b8c" opacity="0.7"/>
+  <rect x="176" y="264" width="120" height="22" rx="11" fill="#1a4b8c" opacity="0.5"/>
+  <rect x="176" y="312" width="80" height="22" rx="11" fill="#1a4b8c" opacity="0.3"/>
+</svg>

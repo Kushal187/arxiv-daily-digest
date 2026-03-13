@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import type { Session } from "next-auth";
 import { SignInButton } from "./sign-in-button";
@@ -8,6 +9,7 @@ export function Nav({ session }: { session: Session | null }) {
     <header className="site-header">
       <div className="site-branding">
         <Link className="brand" href={session ? "/digest" : "/"}>
+          <Image src="/favicon.svg" alt="" width={20} height={20} className="brand-icon" />
           arXiv Daily Digest
         </Link>
         <p className="site-tagline">ranked daily arxiv for ml researchers</p>
