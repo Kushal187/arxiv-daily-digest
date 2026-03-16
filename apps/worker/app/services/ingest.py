@@ -332,7 +332,7 @@ def run_daily_ingest(run_date: date | None = None, force: bool = False) -> dict[
             papers = [
                 paper
                 for paper in all_fetched
-                if window_start <= paper["published_at"] <= window_end
+                if window_start <= paper["updated_at"] <= window_end
             ]
 
             if not all_fetched:
